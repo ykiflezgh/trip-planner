@@ -1,0 +1,77 @@
+# Trip Planner
+
+Group trip planning on Kotlin Multiplatform + Compose Multiplatform (Android, iOS)
+with a Firebase backend and Google Maps Platform, Calendar, and Gemini integrations.
+Built from `trip-planner-system-design.md` **v1.0** — section references (§) in code
+comments point there.
+
+## Status — read this first
+
+`./gradlew build` is **green** (Android debug/release, iOS frameworks, lint, and
+`FractionalIndexTest`) as of 2026-09-17, on JDK 26 / Gradle 9.3 / Kotlin 2.2.20. The
+scaffold was originally generated without a Gradle sync; the first build surfaced the
+following, now fixed in place:
+
+- **Firebase BoM.** GitLive's Android artifacts declare the Firebase SDK modules without
+  versions, so `shared` exposes `firebase-bom` 33.15.0 (the BoM GitLive 2.3.0 was built
+  against) as an `api` platform dependency.
+- **Ktor 3.3.3.** 3.2.0 fails D8 dexing for `minSdk < 30` (KTOR-8583); 3.4+ is built on
+  Kotlin 2.3 and its metadata is rejected by Kotlin 2.2.20. Bump Kotlin before bumping Ktor.
+- **Koin `viewModel {}` DSL** lives in `koin-core-viewmodel`, not `koin-core`.
+- **`google-services.json` is optional at build time.** `composeApp` applies the Google
+  Services plugin only when the file exists, so a clean checkout builds; Firebase init at
+  runtime still needs it (Phase 0, task 4).
+- **iOS test binary is not linked.** GitLive's iOS klibs link against the native Firebase
+  frameworks, which only exist inside the Xcode project (SPM). `commonTest` runs on the
+  JVM via the Android unit-test tasks; iOS smoke tests are XCUITest (design §13).
+- **App Link host** is the `APP_LINK_HOST` manifest placeholder (default: the dev Hosting
+  site `tripplanner-dev-fe0a4.web.app`); lint rejects the old `REPLACE-…` placeholder.
+- Maps Compose 6.7: `rememberMarkerState` was removed; use `rememberUpdatedMarkerState`.
+
+The Android app runs on an emulator (2026-09-17): `TripPlannerApp` starts Koin, the
+google-services plugin initialises Firebase from the dev project's config, and the trip
+list shows its signed-out state with a **Sign in with Google** button (Credential Manager,
+`composeApp/androidMain/auth/`). Firestore rules + indexes are deployed to the dev project.
+Sign-in completes only once the Google provider is switched on in Firebase Auth (see the
+spike doc's prerequisites). Still unverified: the GitLive Firestore/Functions call
+shapes in `shared/data/` compile but have not exchanged data with Firestore yet (Phase 0,
+task 4), and nothing has been run on an iOS simulator. Cloud Functions in `firebase/functions/` are compile-shaped
+TypeScript with TODOs where Phase 2/3 work lands (Routes, Gemini, burst collapsing).
+
+## Layout
+
+```
+composeApp/   Compose Multiplatform UI + Android entry point + expect/actual (map)
+shared/       models, FractionalIndex, repositories, Ktor APIs, ViewModels, Koin
+iosApp/       Swift sources + instructions to generate the Xcode project
+firebase/     rules, indexes, hosting (.well-known for App/Universal Links), functions
+docs/         phase0-spike.md — this week's plan with exit criteria
+planning/     issues.json + script to file the Phase 0–4 roadmap as GitHub issues
+```
+
+## Getting to a first run
+
+1. **Toolchain:** JDK 17+, Android Studio (latest stable), Xcode 16+, Node 22,
+   Firebase CLI (`npm i -g firebase-tools`).
+2. **Build check:** `./gradlew build` (green as of the date above; runs the shared unit
+   tests on the JVM).
+3. **Firebase:** follow the prerequisites checklist in `docs/phase0-spike.md`
+   (projects, Auth, Firestore, restricted Maps/Places API keys, config files —
+   `google-services.json` and `GoogleService-Info.plist` are gitignored on purpose;
+   the spike doc has the CLI command to re-download the Android one).
+   Run on Android: `./gradlew :composeApp:installDebug` with an emulator booted.
+4. **iOS project:** generate per `iosApp/README.md`, then drop in the provided Swift files.
+5. **Backend:** `cd firebase && firebase deploy --only firestore:rules,firestore:indexes`.
+6. Work through `docs/phase0-spike.md` — its exit criteria decide whether the
+   architecture's riskiest bets (design §16) hold.
+
+## Filing the roadmap as issues
+
+See `planning/README.md` — one dry-run command to preview, one to create, once a
+GitHub repo exists.
+
+## Design doc
+
+Keep `trip-planner-system-design.md` (v1.0) next to this repo or in `docs/`; the
+decision log (§18) and revision history (§19) are the source of truth when code and
+doc disagree.

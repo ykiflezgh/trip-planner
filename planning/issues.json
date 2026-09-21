@@ -1,0 +1,80 @@
+{
+  "repo": "OWNER/trip-planner",
+  "issues": [
+    {
+      "title": "Phase 0: fix version catalog and get a clean build on both platforms",
+      "body": "## Context\nScaffold was generated without a network-verified Gradle sync (design v1.0, §14/§17 Phase 0).\n\n## Task\nAlign `gradle/libs.versions.toml` with current stable versions (compare with the KMP wizard), then get `./gradlew build` and an Xcode build green from a clean checkout.\n\n## Acceptance criteria\n- [ ] `./gradlew build` passes\n- [ ] `./gradlew :shared:allTests` passes (incl. FractionalIndexTest)\n- [ ] iosApp builds and runs in the simulator (see iosApp/README.md)",
+      "labels": ["phase-0", "build"]
+    },
+    {
+      "title": "Phase 0: initialize Firebase on Android and iOS, wire Koin startup",
+      "body": "## Context\nDesign §5/§6 — Firebase from common code via GitLive; DI via Koin.\n\n## Task\nCreate the `tripplanner-dev` Firebase project (docs/phase0-spike.md prerequisites), add config files, start Koin with `sharedModule(placesApiKey)` in MainActivity and iOSApp, verify `FirestoreTripRepository` compiles against the pinned GitLive version.\n\n## Acceptance criteria\n- [ ] A `trips` doc written on Android appears live on iOS via the shared Flow in < 2 s (exit criterion E2)\n- [ ] Rules + indexes deployed from `firebase/`",
+      "labels": ["phase-0", "firebase"]
+    },
+    {
+      "title": "Phase 0: implement GoogleSignInProvider on both platforms",
+      "body": "## Context\nDesign §6.4 — Credential Manager + googleid on Android; GoogleSignIn SDK on iOS; ID token exchanged with Firebase Auth.\n\n## Task\nImplement `shared/platform/GoogleSignInProvider` actuals and a minimal sign-in button on the trip list empty state.\n\n## Acceptance criteria\n- [ ] Sign-in completes on both platforms and yields a Firebase user (exit criterion E4)\n- [ ] Sign-out works and the trip list returns to the signed-out state",
+      "labels": ["phase-0", "auth"]
+    },
+    {
+      "title": "Phase 0: map behind the shared MapView boundary + interop stress test",
+      "body": "## Context\nDesign §6.4 — Maps Compose on Android; GMSMapView via UIKitViewController factory on iOS. This validates decision log #1.\n\n## Task\nReplace the iOS placeholder in `MapViewFactory.swift` with a real GMSMapView; render markers and route tap callbacks into Kotlin on both platforms; run the interop stress test (docs/phase0-spike.md task 7).\n\n## Acceptance criteria\n- [ ] Exit criteria E3 and E5 met, or the §16 fallback is triggered and recorded in the design decision log",
+      "labels": ["phase-0", "maps"]
+    },
+    {
+      "title": "Phase 1: trip creation and trip list",
+      "body": "## Context\nDesign §3.1 (1–2), §7.\n\n## Task\nCreate-trip flow (name, dates, timeZone defaulting to device zone), trip list with empty state, owner role written on create.\n\n## Acceptance criteria\n- [ ] Trip doc matches the §7 schema incl. `timeZone`, `memberIds`, `roles`\n- [ ] Rules allow create only when ownerId == auth.uid and creator is a member",
+      "labels": ["phase-1", "feature"]
+    },
+    {
+      "title": "Phase 1: Places autocomplete and add-stop flow",
+      "body": "## Context\nDesign §8.1 — client-direct Places API (New) with session tokens.\n\n## Task\nSearch sheet using `PlacesApi.autocomplete` (min 3 chars, debounce ≥ 200 ms), details fetch on selection, write the stop with a fractional order key at the end of the chosen day.\n\n## Acceptance criteria\n- [ ] One autocomplete session + details call bill as a single session (session token passed to both)\n- [ ] Stop appears offline-first (local snapshot) then syncs\n- [ ] Only placeId + coordinates stored durably (§7 caching note)",
+      "labels": ["phase-1", "feature", "places"]
+    },
+    {
+      "title": "Phase 1: day tabs with drag-and-drop reorder",
+      "body": "## Context\nDesign §3.1 (4), §7 fractional indexing.\n\n## Task\nTrip detail screen: day tabs, reorder within and across days via `TripDetailViewModel.moveStop` (single-document writes), NOT_FOUND on concurrent delete surfaced as a toast.\n\n## Acceptance criteria\n- [ ] Two devices reordering concurrently converge without lost stops\n- [ ] `FractionalIndexTest` invariants hold in an on-device soak (500 random moves)",
+      "labels": ["phase-1", "feature"]
+    },
+    {
+      "title": "Phase 1: map screen for the selected day",
+      "body": "## Context\nDesign §3.1 (4), §6.4.\n\n## Task\nDay's stops as markers, camera bounds to fit, selection sync between list and map, polyline between consecutive stops.\n\n## Acceptance criteria\n- [ ] Works on both platforms via the shared MapView boundary",
+      "labels": ["phase-1", "maps"]
+    },
+    {
+      "title": "Phase 1: offline UX pass",
+      "body": "## Context\nDesign §9.\n\n## Task\nPending-sync indicator from snapshot metadata, disabled states + messaging for autocomplete/export while offline, listener scoping (active trip only) verified.\n\n## Acceptance criteria\n- [ ] Airplane-mode edit/reopen/sync round-trip works on both platforms\n- [ ] No listeners remain attached after leaving a trip (check Firestore usage logs)",
+      "labels": ["phase-1", "quality"]
+    },
+    {
+      "title": "Phase 2: invites (Functions + App Links/Universal Links)",
+      "body": "## Context\nDesign §8.2 — createInvite/redeemInvite are already skeletoned in firebase/functions.\n\n## Task\nShare sheet on the trip screen, Hosting landing page for /join/{code}, App Link + Universal Link verification (replace placeholders in AndroidManifest.xml and .well-known/), redemption flow into the trip.\n\n## Acceptance criteria\n- [ ] Fresh install → invite link → lands in the joined trip on both platforms\n- [ ] Expired/exhausted codes rejected with a clear message",
+      "labels": ["phase-2", "feature"]
+    },
+    {
+      "title": "Phase 2: activity feed and FCM fan-out",
+      "body": "## Context\nDesign §10 — onStopWritten already writes activity events; fan-out is stubbed.\n\n## Task\nFinish token collection/pruning and burst collapsing in the Function; platform token registration (FirebaseMessagingService / APNs); notification prefs; feed screen.\n\n## Acceptance criteria\n- [ ] Editing on device A notifies device B (data message, deep-links to the stop)\n- [ ] 3+ rapid edits collapse into one digest\n- [ ] Unregistered tokens are pruned",
+      "labels": ["phase-2", "notifications"]
+    },
+    {
+      "title": "Phase 2: travel times via Routes API",
+      "body": "## Context\nDesign §8.3 — recompute only affected adjacencies, 24 h cache, driving + walking only (decision log #2).\n\n## Task\nImplement the Routes call in `onStopWritten` with the ROUTES_API_KEY secret; render travel legs between stops with a shimmer while missing.\n\n## Acceptance criteria\n- [ ] Moving one stop triggers ≤ 5 Routes calls (§15)\n- [ ] Legs cache-hit within 24 h; stale legs for removed adjacencies are deleted",
+      "labels": ["phase-2", "maps"]
+    },
+    {
+      "title": "Phase 3: Google Calendar export",
+      "body": "## Context\nDesign §8.4 — incremental auth for calendar.events; events in the trip's timeZone; re-export updates via stored eventIds.\n\n## Task\nImplement `GoogleAuthorizer` on both platforms, the export use case over `CalendarApi`, and eventId bookkeeping on stops. Start Google OAuth verification for the sensitive scope (§11, §16).\n\n## Acceptance criteria\n- [ ] Export creates correctly-timed events (09:00 day start + durations + travel) in the trip's timeZone\n- [ ] Re-export updates rather than duplicates\n- [ ] Tokens are requested per export and never persisted",
+      "labels": ["phase-3", "calendar"]
+    },
+    {
+      "title": "Phase 3: Gemini day-order suggestions behind a flag",
+      "body": "## Context\nDesign §8.5 — suggestDayOrder Function is skeletoned; Remote Config flag suggest_order_enabled.\n\n## Task\nWire the Gemini call with responseSchema, permutation validation, preview UI with apply-as-batch.\n\n## Acceptance criteria\n- [ ] Invalid/hallucinated IDs are rejected server-side\n- [ ] Flag off = no UI entry point",
+      "labels": ["phase-3", "ai"]
+    },
+    {
+      "title": "Phase 4: hardening — rules tests, emulator CI, observability, store prep",
+      "body": "## Context\nDesign §12–§14, §17 Phase 4.\n\n## Task\nRules allow/deny matrix with @firebase/rules-unit-testing, GitHub Actions (Linux: gradle check + emulator tests; macOS: Android release + xcodebuild archive), Crashlytics/Analytics events (§12), App Check enforcement, Sign in with Apple, Play/TestFlight submissions.\n\n## Acceptance criteria\n- [ ] CI green on a clean clone\n- [ ] App Check enforced on Firestore + callables\n- [ ] Internal-testing builds live on both stores",
+      "labels": ["phase-4", "quality"]
+    }
+  ]
+}

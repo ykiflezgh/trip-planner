@@ -1,0 +1,5 @@
+{
+  "applinks": {
+    "details": [{ "appIDs": ["TEAMID.app.tripplanner"], "components": [{ "/": "/join/*" }] }]
+  }
+}
