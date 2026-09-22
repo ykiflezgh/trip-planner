@@ -28,14 +28,14 @@ following, now fixed in place:
   site `tripplanner-dev-fe0a4.web.app`); lint rejects the old `REPLACE-…` placeholder.
 - Maps Compose 6.7: `rememberMarkerState` was removed; use `rememberUpdatedMarkerState`.
 
-The Android app runs on an emulator (2026-09-17): `TripPlannerApp` starts Koin, the
-google-services plugin initialises Firebase from the dev project's config, and the trip
-list shows its signed-out state with a **Sign in with Google** button (Credential Manager,
-`composeApp/androidMain/auth/`). Firestore rules + indexes are deployed to the dev project.
-Sign-in completes only once the Google provider is switched on in Firebase Auth (see the
-spike doc's prerequisites). Still unverified: the GitLive Firestore/Functions call
-shapes in `shared/data/` compile but have not exchanged data with Firestore yet (Phase 0,
-task 4), and nothing has been run on an iOS simulator. Cloud Functions in `firebase/functions/` are compile-shaped
+**Android end-to-end works (2026-09-22):** Google sign-in (Credential Manager,
+`composeApp/androidMain/auth/`), "New trip" writes a trip + sample stops through the shared
+`TripRepository`, the list updates from the live Firestore listener, and the trip detail
+screen shows the stops on Google Maps with marker taps reaching the shared ViewModel.
+Navigation is `navigation-compose` with `@Serializable` routes (`App.kt`). Firestore rules
+and indexes are deployed to the dev project. Secrets: `MAPS_API_KEY` is read from the env
+or `local.properties`; `google-services.json` is fetched with the Firebase CLI (spike doc). Still unverified: the Functions/Places/Calendar call shapes in
+`shared/data/`, and nothing has been run on an iOS simulator. Cloud Functions in `firebase/functions/` are compile-shaped
 TypeScript with TODOs where Phase 2/3 work lands (Routes, Gemini, burst collapsing).
 
 ## Layout

@@ -1,10 +1,20 @@
+import java.util.Properties
+
 plugins {
     alias(libs.plugins.kotlinMultiplatform)
     alias(libs.plugins.androidApplication)
     alias(libs.plugins.composeMultiplatform)
     alias(libs.plugins.composeCompiler)
+    alias(libs.plugins.kotlinSerialization) // type-safe navigation routes
     alias(libs.plugins.googleServices) apply false
 }
+
+// Local secrets: environment first (CI), then local.properties (gitignored), else empty.
+val localProperties = Properties().apply {
+    val f = rootProject.file("local.properties")
+    if (f.exists()) f.inputStream().use { load(it) }
+}
+fun secret(name: String): String = System.getenv(name) ?: localProperties.getProperty(name) ?: ""
 
 // google-services.json is gitignored (README). Apply the plugin only when it is present so a
 // clean checkout still builds (Phase 0 exit criterion E1); Firebase init then needs the file.
@@ -31,6 +41,7 @@ kotlin {
             implementation(compose.components.resources)
             implementation(libs.androidx.lifecycle.runtime.compose)
             implementation(libs.androidx.navigation.compose)
+            implementation(libs.kotlinx.serialization.json) // @Serializable routes
             implementation(libs.koin.compose.viewmodel)
             implementation(libs.coil.compose)
             implementation(libs.coil.network.ktor)
@@ -57,8 +68,8 @@ android {
         targetSdk = 36
         versionCode = 1
         versionName = "0.1.0"
-        // Injected into AndroidManifest; set MAPS_API_KEY in local.properties or CI env.
-        manifestPlaceholders["MAPS_API_KEY"] = System.getenv("MAPS_API_KEY") ?: ""
+        // Injected into AndroidManifest; set MAPS_API_KEY in local.properties or the CI env.
+        manifestPlaceholders["MAPS_API_KEY"] = secret("MAPS_API_KEY")
         // Firebase Hosting domain that serves /join/{code} + .well-known/assetlinks.json (design §8.2).
         // Defaults to the dev project's site; prod flavor / CI overrides via APP_LINK_HOST.
         manifestPlaceholders["APP_LINK_HOST"] = System.getenv("APP_LINK_HOST") ?: "tripplanner-dev-fe0a4.web.app"
