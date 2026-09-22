@@ -16,3 +16,7 @@ firebase/functions/lib/
 google-services.json
 GoogleService-Info.plist
 .env
+iosApp/iosApp.xcodeproj/
+iosApp/build/
+iosApp/.build/
+iosApp/Info.plist

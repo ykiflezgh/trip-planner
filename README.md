@@ -34,8 +34,10 @@ following, now fixed in place:
 screen shows the stops on Google Maps with marker taps reaching the shared ViewModel.
 Navigation is `navigation-compose` with `@Serializable` routes (`App.kt`). Firestore rules
 and indexes are deployed to the dev project. Secrets: `MAPS_API_KEY` is read from the env
-or `local.properties`; `google-services.json` is fetched with the Firebase CLI (spike doc). Still unverified: the Functions/Places/Calendar call shapes in
-`shared/data/`, and nothing has been run on an iOS simulator. Cloud Functions in `firebase/functions/` are compile-shaped
+or `local.properties`; `google-services.json` is fetched with the Firebase CLI (spike doc). **iOS runs (2026-09-22):** `iosApp/project.yml` + XcodeGen generate the Xcode project (see
+`iosApp/README.md`); Firebase is configured from the dev project's plist and the shared UI
+renders in the simulator. Google sign-in and the native map are still stubs on iOS.
+Still unverified: the Functions/Places/Calendar call shapes in `shared/data/`. Cloud Functions in `firebase/functions/` are compile-shaped
 TypeScript with TODOs where Phase 2/3 work lands (Routes, Gemini, burst collapsing).
 
 ## Layout
@@ -60,7 +62,8 @@ planning/     issues.json + script to file the Phase 0–4 roadmap as GitHub iss
    `google-services.json` and `GoogleService-Info.plist` are gitignored on purpose;
    the spike doc has the CLI command to re-download the Android one).
    Run on Android: `./gradlew :composeApp:installDebug` with an emulator booted.
-4. **iOS project:** generate per `iosApp/README.md`, then drop in the provided Swift files.
+4. **iOS project:** `brew install xcodegen && (cd iosApp && xcodegen generate)`, then open
+   `iosApp/iosApp.xcodeproj` (details in `iosApp/README.md`).
 5. **Backend:** `cd firebase && firebase deploy --only firestore:rules,firestore:indexes`.
 6. Work through `docs/phase0-spike.md` — its exit criteria decide whether the
    architecture's riskiest bets (design §16) hold.
