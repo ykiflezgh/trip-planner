@@ -38,7 +38,9 @@ or `local.properties`; `google-services.json` is fetched with the Firebase CLI (
 `iosApp/README.md`); Firebase is configured from the dev project's plist and the shared UI
 renders in the simulator. Google sign-in (GoogleSignIn-iOS) and the native map (GoogleMaps SDK behind the Kotlin
 `NativeMap` boundary) are wired on iOS; simulator builds are ad-hoc signed so Firebase Auth
-can use the keychain.
+can use the keychain. The interop stress test (map in a scrolling list + bottom sheet +
+keyboard) passed on iOS, so the design's SwiftUI fallback (§16) is not needed. All Phase 0
+tasks are done except device-level frame measurement.
 Still unverified: the Functions/Places/Calendar call shapes in `shared/data/`. Cloud Functions in `firebase/functions/` are compile-shaped
 TypeScript with TODOs where Phase 2/3 work lands (Routes, Gemini, burst collapsing).
 

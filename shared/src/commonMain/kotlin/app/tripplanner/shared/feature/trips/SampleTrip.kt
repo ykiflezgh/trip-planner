@@ -28,7 +28,7 @@ object SampleTrip {
         val tz = TimeZone.currentSystemDefault()
         val today = Clock.System.now().toLocalDateTime(tz).date
         return Trip(
-            name = "Lisbon weekend",
+            name = "Lisbon long weekend",
             startDate = today.toString(),
             endDate = today.plus(2, DateTimeUnit.DAY).toString(),
             timeZone = tz.id,
@@ -42,12 +42,17 @@ object SampleTrip {
      * The fixture stops, in itinerary order (day 0 first).
      *
      * Complexity:
-     * - **Time:** O(K) where K is the fixed number of fixture stops (3).
+     * - **Time:** O(K) where K is the fixed number of fixture stops (8).
      * - **Space:** O(K) list allocation.
      */
     fun stops(uid: String): List<Stop> = listOf(
         Stop(name = "Belém Tower", lat = 38.6916, lng = -9.2160, address = "Av. Brasília, Lisboa", day = 0, addedBy = uid),
         Stop(name = "Jerónimos Monastery", lat = 38.6979, lng = -9.2068, address = "Praça do Império, Lisboa", day = 0, durationMin = 90, addedBy = uid),
+        Stop(name = "Pastéis de Belém", lat = 38.6975, lng = -9.2033, address = "R. de Belém 84, Lisboa", day = 0, durationMin = 30, addedBy = uid),
+        Stop(name = "LX Factory", lat = 38.7034, lng = -9.1786, address = "R. Rodrigues de Faria 103, Lisboa", day = 0, durationMin = 120, addedBy = uid),
         Stop(name = "Time Out Market", lat = 38.7070, lng = -9.1458, address = "Av. 24 de Julho 49, Lisboa", day = 1, addedBy = uid),
+        Stop(name = "Praça do Comércio", lat = 38.7077, lng = -9.1366, address = "Praça do Comércio, Lisboa", day = 1, durationMin = 45, addedBy = uid),
+        Stop(name = "Castelo de São Jorge", lat = 38.7139, lng = -9.1335, address = "R. de Santa Cruz do Castelo, Lisboa", day = 1, durationMin = 90, addedBy = uid),
+        Stop(name = "Miradouro da Senhora do Monte", lat = 38.7195, lng = -9.1327, address = "Largo Monte, Lisboa", day = 2, durationMin = 30, addedBy = uid),
     )
 }
