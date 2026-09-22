@@ -3,11 +3,25 @@ package app.tripplanner.ui
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.viewinterop.UIKitViewController
 import app.tripplanner.IosBridges
+import app.tripplanner.NativeMapStop
 import app.tripplanner.shared.core.model.Stop
 
+/**
+ * GMSMapView hosted through [app.tripplanner.NativeMapFactory]; stops and selection are pushed
+ * into the Swift controller, taps come back through the factory callback (design §6.4).
+ *
+ * Complexity:
+ * - **Recomposition Time:** O(S) when stops change (one [NativeMapStop] per stop is bridged);
+ *   O(1) when only the selection changes.
+ * - **Composition Memory:** O(1) Compose nodes - the S markers live in the native map.
+ */
 @Composable
 actual fun MapView(
     stops: List<Stop>,
@@ -15,12 +29,18 @@ actual fun MapView(
     onStopTapped: (String) -> Unit,
     modifier: Modifier,
 ) {
-    val factory = IosBridges.mapViewControllerFactory
+    val factory = IosBridges.nativeMapFactory
     if (factory == null) {
-        Text("Map unavailable: register a factory in MainViewController")
+        Text("Map unavailable: register a NativeMapFactory in MainViewController")
         return
     }
-    UIKitViewController(factory = factory, modifier = modifier.fillMaxSize())
-    // TODO Phase 0 spike: pass stops/selection through a MapController interface,
-    // implemented by the Swift wrapper (iosApp/MapViewFactory.swift)
+    val currentOnStopTapped by rememberUpdatedState(onStopTapped)
+    val map = remember(factory) { factory.create { id -> currentOnStopTapped(id) } }
+
+    UIKitViewController(factory = { map.viewController }, modifier = modifier.fillMaxSize())
+
+    LaunchedEffect(map, stops) {
+        map.setStops(stops.map { NativeMapStop(it.id, it.name, it.lat, it.lng) })
+    }
+    LaunchedEffect(map, selectedStopId) { map.setSelectedStop(selectedStopId) }
 }

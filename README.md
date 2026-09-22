@@ -36,8 +36,9 @@ Navigation is `navigation-compose` with `@Serializable` routes (`App.kt`). Fires
 and indexes are deployed to the dev project. Secrets: `MAPS_API_KEY` is read from the env
 or `local.properties`; `google-services.json` is fetched with the Firebase CLI (spike doc). **iOS runs (2026-09-22):** `iosApp/project.yml` + XcodeGen generate the Xcode project (see
 `iosApp/README.md`); Firebase is configured from the dev project's plist and the shared UI
-renders in the simulator. Google sign-in is wired on iOS (GoogleSignIn-iOS via SPM, `iosApp/GoogleSignInBridge.swift`);
-the native map is still a placeholder.
+renders in the simulator. Google sign-in (GoogleSignIn-iOS) and the native map (GoogleMaps SDK behind the Kotlin
+`NativeMap` boundary) are wired on iOS; simulator builds are ad-hoc signed so Firebase Auth
+can use the keychain.
 Still unverified: the Functions/Places/Calendar call shapes in `shared/data/`. Cloud Functions in `firebase/functions/` are compile-shaped
 TypeScript with TODOs where Phase 2/3 work lands (Routes, Gemini, burst collapsing).
 

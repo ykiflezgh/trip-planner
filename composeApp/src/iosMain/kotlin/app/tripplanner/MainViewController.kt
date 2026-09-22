@@ -5,7 +5,7 @@ import platform.UIKit.UIViewController
 
 /** Factory registered by iosApp at startup so the map's Swift wrapper reaches Kotlin (§6.4). */
 object IosBridges {
-    var mapViewControllerFactory: (() -> UIViewController)? = null
+    var nativeMapFactory: NativeMapFactory? = null
 }
 
 /**
@@ -15,7 +15,7 @@ object IosBridges {
  * - **Time:** O(1) controller creation; composition cost is documented on [App].
  * - **Space:** O(1) plus the Compose tree.
  */
-fun MainViewController(mapFactory: () -> UIViewController): UIViewController {
-    IosBridges.mapViewControllerFactory = mapFactory
+fun MainViewController(mapFactory: NativeMapFactory): UIViewController {
+    IosBridges.nativeMapFactory = mapFactory
     return ComposeUIViewController { App() }
 }

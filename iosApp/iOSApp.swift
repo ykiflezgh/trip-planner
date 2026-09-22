@@ -2,7 +2,7 @@ import SwiftUI
 import ComposeApp
 import FirebaseCore
 import GoogleSignIn
-// import GoogleMaps
+import GoogleMaps
 
 @main
 struct iOSApp: App {
@@ -11,7 +11,7 @@ struct iOSApp: App {
         FirebaseApp.configure()
         // Maps/Places key lives in Info.plist (MAPS_API_KEY), never in source (design §11).
         let mapsKey = Bundle.main.object(forInfoDictionaryKey: "MAPS_API_KEY") as? String ?? ""
-        // GMSServices.provideAPIKey(mapsKey)  // spike task 6, iOS half
+        GMSServices.provideAPIKey(mapsKey)
         IosModuleKt.doInitKoin(placesApiKey: mapsKey, googleSignIn: GoogleSignInBridgeImpl())
     }
     var body: some Scene {
@@ -26,7 +26,7 @@ struct iOSApp: App {
 
 struct ComposeView: UIViewControllerRepresentable {
     func makeUIViewController(context: Context) -> UIViewController {
-        MainViewControllerKt.MainViewController(mapFactory: { MapViewFactory.make() })
+        MainViewControllerKt.MainViewController(mapFactory: GoogleMapFactory())
     }
     func updateUIViewController(_ uiViewController: UIViewController, context: Context) {}
 }

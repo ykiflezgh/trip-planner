@@ -12,6 +12,9 @@ packages:
   GoogleSignIn:
     url: https://github.com/google/GoogleSignIn-iOS
     from: "10.0.0"
+  GoogleMaps:
+    url: https://github.com/googlemaps/ios-maps-sdk
+    from: "11.1.0"
 targets:
   iosApp:
     type: application
@@ -41,6 +44,9 @@ targets:
         TARGETED_DEVICE_FAMILY: "1"
         MAPS_API_KEY: ""
         CODE_SIGN_STYLE: Automatic
+        # Simulator builds are ad-hoc signed so the app can use the keychain (Firebase Auth
+        # persists the user there; an unsigned build fails with FIRAuthErrorDomain 17995).
+        "CODE_SIGN_IDENTITY[sdk=iphonesimulator*]": "-"
         ENABLE_USER_SCRIPT_SANDBOXING: false
         # Kotlin framework produced by the pre-build script below
         FRAMEWORK_SEARCH_PATHS: "$(inherited) $(SRCROOT)/../composeApp/build/xcode-frameworks/$(CONFIGURATION)/$(SDK_NAME)"
@@ -56,6 +62,8 @@ targets:
         product: FirebaseRemoteConfig
       - package: GoogleSignIn
         product: GoogleSignIn
+      - package: GoogleMaps
+        product: GoogleMaps
     preBuildScripts:
       - name: Compile Kotlin Framework
         basedOnDependencyAnalysis: false
@@ -64,10 +72,11 @@ targets:
           export JAVA_HOME="${JAVA_HOME:-$(/usr/libexec/java_home -v 17+)}"
           ./gradlew :composeApp:embedAndSignAppleFrameworkForXcode
     postBuildScripts:
-      # Google Sign-In's callback needs the reversed client ID as a URL scheme. It lives in the
-      # gitignored GoogleService-Info.plist, so inject it into the built Info.plist here (runs
-      # before code signing) instead of committing it.
-      - name: Inject Google Sign-In URL scheme
+      # Google Sign-In's callback needs the reversed client ID as a URL scheme, and the Maps SDK
+      # needs a key. Both come from the gitignored GoogleService-Info.plist (the Firebase iOS key
+      # doubles as the Maps key until a restricted one exists, design §11), injected into the built
+      # Info.plist here - this runs before code signing - instead of being committed.
+      - name: Inject Google config into Info.plist
         basedOnDependencyAnalysis: false
         script: |
           set -e
@@ -80,6 +89,10 @@ targets:
           /usr/libexec/PlistBuddy -c "Add :CFBundleURLTypes:0 dict" "$PLIST"
           /usr/libexec/PlistBuddy -c "Add :CFBundleURLTypes:0:CFBundleURLSchemes array" "$PLIST"
           /usr/libexec/PlistBuddy -c "Add :CFBundleURLTypes:0:CFBundleURLSchemes:0 string $SCHEME" "$PLIST"
+          if [ -z "$MAPS_API_KEY" ]; then
+            KEY=$(/usr/libexec/PlistBuddy -c "Print :API_KEY" "$GSI")
+            /usr/libexec/PlistBuddy -c "Set :MAPS_API_KEY $KEY" "$PLIST"
+          fi
 schemes:
   iosApp:
     build:
