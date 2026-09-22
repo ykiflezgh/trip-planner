@@ -4,9 +4,15 @@ package app.tripplanner.shared.platform
  * Platform boundaries from design SS6.4. Implemented in androidMain / iosApp,
  * bound via Koin at app startup. Everything else in `shared` is pure common code.
  */
+/**
+ * Tokens from the platform Google sign-in. Firebase Auth needs the ID token everywhere; on
+ * iOS the access token is required as well (FIRGoogleAuthProvider), on Android it is unused.
+ */
+data class GoogleTokens(val idToken: String, val accessToken: String? = null)
+
 interface GoogleSignInProvider {
-    /** Runs the platform sign-in UI and returns a Google ID token for Firebase Auth. */
-    suspend fun signIn(): String
+    /** Runs the platform sign-in UI and returns Google tokens for Firebase Auth. */
+    suspend fun signIn(): GoogleTokens
     suspend fun signOut()
 }
 

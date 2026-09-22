@@ -11,6 +11,7 @@ import androidx.credentials.GetCredentialRequest
 import androidx.credentials.exceptions.GetCredentialCancellationException
 import androidx.credentials.exceptions.NoCredentialException
 import app.tripplanner.shared.platform.GoogleSignInProvider
+import app.tripplanner.shared.platform.GoogleTokens
 import app.tripplanner.shared.platform.SignInCancelledException
 import com.google.android.libraries.identity.googleid.GetSignInWithGoogleOption
 import com.google.android.libraries.identity.googleid.GoogleIdTokenCredential
@@ -45,7 +46,7 @@ class AndroidGoogleSignInProvider(
 
     private val credentialManager = CredentialManager.create(context)
 
-    override suspend fun signIn(): String {
+    override suspend fun signIn(): GoogleTokens {
         require(serverClientId.isNotBlank()) { "default_web_client_id is missing - is google-services.json present?" }
         val activity = currentActivity.activity ?: error("No foreground Activity to show the sign-in UI")
         val request = GetCredentialRequest.Builder()
@@ -61,7 +62,7 @@ class AndroidGoogleSignInProvider(
         if (credential is CustomCredential &&
             credential.type == GoogleIdTokenCredential.TYPE_GOOGLE_ID_TOKEN_CREDENTIAL
         ) {
-            return GoogleIdTokenCredential.createFrom(credential.data).idToken
+            return GoogleTokens(idToken = GoogleIdTokenCredential.createFrom(credential.data).idToken)
         }
         error("Unexpected credential type: ${credential.type}")
     }

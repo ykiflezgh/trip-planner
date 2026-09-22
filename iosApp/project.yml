@@ -9,6 +9,9 @@ packages:
   Firebase:
     url: https://github.com/firebase/firebase-ios-sdk
     from: "12.19.0"   # GitLive 2.3.0 pairs with this Firebase iOS major
+  GoogleSignIn:
+    url: https://github.com/google/GoogleSignIn-iOS
+    from: "10.0.0"
 targets:
   iosApp:
     type: application
@@ -51,6 +54,8 @@ targets:
         product: FirebaseFunctions
       - package: Firebase
         product: FirebaseRemoteConfig
+      - package: GoogleSignIn
+        product: GoogleSignIn
     preBuildScripts:
       - name: Compile Kotlin Framework
         basedOnDependencyAnalysis: false
@@ -58,6 +63,23 @@ targets:
           cd "$SRCROOT/.."
           export JAVA_HOME="${JAVA_HOME:-$(/usr/libexec/java_home -v 17+)}"
           ./gradlew :composeApp:embedAndSignAppleFrameworkForXcode
+    postBuildScripts:
+      # Google Sign-In's callback needs the reversed client ID as a URL scheme. It lives in the
+      # gitignored GoogleService-Info.plist, so inject it into the built Info.plist here (runs
+      # before code signing) instead of committing it.
+      - name: Inject Google Sign-In URL scheme
+        basedOnDependencyAnalysis: false
+        script: |
+          set -e
+          GSI="$SRCROOT/GoogleService-Info.plist"
+          PLIST="$TARGET_BUILD_DIR/$INFOPLIST_PATH"
+          [ -f "$GSI" ] || { echo "warning: GoogleService-Info.plist missing - sign-in callback not configured"; exit 0; }
+          SCHEME=$(/usr/libexec/PlistBuddy -c "Print :REVERSED_CLIENT_ID" "$GSI")
+          /usr/libexec/PlistBuddy -c "Delete :CFBundleURLTypes" "$PLIST" 2>/dev/null || true
+          /usr/libexec/PlistBuddy -c "Add :CFBundleURLTypes array" "$PLIST"
+          /usr/libexec/PlistBuddy -c "Add :CFBundleURLTypes:0 dict" "$PLIST"
+          /usr/libexec/PlistBuddy -c "Add :CFBundleURLTypes:0:CFBundleURLSchemes array" "$PLIST"
+          /usr/libexec/PlistBuddy -c "Add :CFBundleURLTypes:0:CFBundleURLSchemes:0 string $SCHEME" "$PLIST"
 schemes:
   iosApp:
     build:

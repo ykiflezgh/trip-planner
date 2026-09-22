@@ -1,6 +1,7 @@
 import SwiftUI
 import ComposeApp
 import FirebaseCore
+import GoogleSignIn
 // import GoogleMaps
 
 @main
@@ -11,10 +12,15 @@ struct iOSApp: App {
         // Maps/Places key lives in Info.plist (MAPS_API_KEY), never in source (design §11).
         let mapsKey = Bundle.main.object(forInfoDictionaryKey: "MAPS_API_KEY") as? String ?? ""
         // GMSServices.provideAPIKey(mapsKey)  // spike task 6, iOS half
-        IosModuleKt.doInitKoin(placesApiKey: mapsKey)
+        IosModuleKt.doInitKoin(placesApiKey: mapsKey, googleSignIn: GoogleSignInBridgeImpl())
     }
     var body: some Scene {
-        WindowGroup { ComposeView().ignoresSafeArea() }
+        WindowGroup {
+            ComposeView()
+                .ignoresSafeArea()
+                // Google Sign-In returns through the reversed-client-ID URL scheme.
+                .onOpenURL { GIDSignIn.sharedInstance.handle($0) }
+        }
     }
 }
 

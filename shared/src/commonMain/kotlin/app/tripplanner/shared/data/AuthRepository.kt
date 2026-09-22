@@ -20,8 +20,8 @@ class AuthRepository(private val google: GoogleSignInProvider) {
     val currentUser: FirebaseUser? get() = Firebase.auth.currentUser
 
     suspend fun signInWithGoogle(): FirebaseUser? {
-        val idToken = google.signIn()
-        val credential = GoogleAuthProvider.credential(idToken = idToken, accessToken = null)
+        val tokens = google.signIn()
+        val credential = GoogleAuthProvider.credential(idToken = tokens.idToken, accessToken = tokens.accessToken)
         return Firebase.auth.signInWithCredential(credential).user
     }
 
