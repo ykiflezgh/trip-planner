@@ -40,5 +40,24 @@
         ]
       }
     ]
+  },
+  "emulators": {
+    "ui": {
+      "enabled": true,
+      "port": 4000
+    },
+    "hosting": {
+      "port": 5050
+    },
+    "functions": {
+      "port": 5001
+    },
+    "firestore": {
+      "port": 8080
+    },
+    "auth": {
+      "port": 9099
+    },
+    "singleProjectMode": true
   }
 }
