@@ -1,5 +1,6 @@
 package app.tripplanner.shared.core.model
 
+import dev.gitlive.firebase.firestore.BaseTimestamp
 import kotlinx.serialization.Serializable
 
 enum class Role { OWNER, EDITOR, VIEWER }
@@ -14,7 +15,9 @@ data class Trip(
     val timeZone: String = "UTC",         // IANA id, drives day boundaries + Calendar export
     val ownerId: String = "",
     val memberIds: List<String> = emptyList(),
-    val roles: Map<String, String> = emptyMap(),
+    val roles: Map<String, String> = emptyMap(), // uid -> "owner" | "editor" | "viewer" (lower-case, rules compare strings)
+    val createdAt: BaseTimestamp? = null,         // server timestamps (§7); null in a local snapshot before the server ack
+    val updatedAt: BaseTimestamp? = null,
 )
 
 @Serializable

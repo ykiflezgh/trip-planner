@@ -6,6 +6,7 @@ import app.tripplanner.shared.data.FirestoreTripRepository
 import app.tripplanner.shared.data.PlacesApi
 import app.tripplanner.shared.data.PlanningFunctions
 import app.tripplanner.shared.data.TripRepository
+import app.tripplanner.shared.feature.trips.NewTripViewModel
 import app.tripplanner.shared.feature.trips.TripDetailViewModel
 import app.tripplanner.shared.feature.trips.TripListViewModel
 import io.ktor.client.HttpClient
@@ -28,5 +29,6 @@ fun sharedModule(placesApiKey: String) = module {
     single { CalendarApi(get()) }
     single { PlanningFunctions() }
     viewModel { TripListViewModel(get(), get()) }
+    viewModel { NewTripViewModel(get(), get()) }
     viewModel { (tripId: String) -> TripDetailViewModel(tripId, get()) }
 }

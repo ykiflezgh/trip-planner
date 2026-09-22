@@ -27,6 +27,9 @@ following, now fixed in place:
 - **App Link host** is the `APP_LINK_HOST` manifest placeholder (default: the dev Hosting
   site `tripplanner-dev-fe0a4.web.app`); lint rejects the old `REPLACE-…` placeholder.
 - Maps Compose 6.7: `rememberMarkerState` was removed; use `rememberUpdatedMarkerState`.
+- **kotlinx-datetime `0.8.0-0.6.x-compat`.** Compose Material3 1.8 (iOS date pickers) still calls
+  `kotlinx.datetime.Clock`, which 0.7 removed; GitLive 2.3 needs the 0.7+ API. The compat build
+  ships both, otherwise `DateRangePicker` crashes on iOS with an `IrLinkageError`.
 
 **Android end-to-end works (2026-09-22):** Google sign-in (Credential Manager,
 `composeApp/androidMain/auth/`), "New trip" writes a trip + sample stops through the shared
@@ -41,6 +44,13 @@ renders in the simulator. Google sign-in (GoogleSignIn-iOS) and the native map (
 can use the keychain. The interop stress test (map in a scrolling list + bottom sheet +
 keyboard) passed on iOS, so the design's SwiftUI fallback (§16) is not needed. All Phase 0
 tasks are done except device-level frame measurement.
+
+**Phase 1 (branch `phase1`):** trip creation is real - `NewTripScreen` (name + Material date
+range picker) -> `NewTripViewModel` -> `NewTrip.build` (owner + sole member, device time zone,
+schema rules unit-tested in `NewTripTest`) -> `TripRepository.createTrip` (server
+`createdAt`/`updatedAt`). The Phase 0 sample-trip button is gone. Remaining Phase 1 items:
+Places autocomplete + add-stop, day tabs with drag reorder, map for the selected day, offline
+UX pass (planning/issues.json).
 Still unverified: the Functions/Places/Calendar call shapes in `shared/data/`. Cloud Functions in `firebase/functions/` are compile-shaped
 TypeScript with TODOs where Phase 2/3 work lands (Routes, Gemini, burst collapsing).
 

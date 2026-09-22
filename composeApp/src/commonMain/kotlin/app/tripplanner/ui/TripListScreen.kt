@@ -46,7 +46,7 @@ import org.koin.compose.viewmodel.koinViewModel
  */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun TripListScreen(onOpenTrip: (Trip) -> Unit) {
+fun TripListScreen(onOpenTrip: (Trip) -> Unit, onNewTrip: () -> Unit) {
     val vm: TripListViewModel = koinViewModel()
     val state by vm.state.collectAsStateWithLifecycle()
     val snackbar = remember { SnackbarHostState() }
@@ -66,9 +66,7 @@ fun TripListScreen(onOpenTrip: (Trip) -> Unit) {
         },
         floatingActionButton = {
             if (state.signedIn) {
-                ExtendedFloatingActionButton(onClick = vm::createSampleTrip) {
-                    Text(if (state.creating) "Creating…" else "New trip")
-                }
+                ExtendedFloatingActionButton(onClick = onNewTrip) { Text("New trip") }
             }
         },
         snackbarHost = { SnackbarHost(snackbar) },

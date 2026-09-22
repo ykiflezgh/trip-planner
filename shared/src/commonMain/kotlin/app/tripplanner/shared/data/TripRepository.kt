@@ -4,6 +4,7 @@ import app.tripplanner.shared.core.model.Stop
 import app.tripplanner.shared.core.model.Trip
 import app.tripplanner.shared.core.util.FractionalIndex
 import dev.gitlive.firebase.Firebase
+import dev.gitlive.firebase.firestore.Timestamp
 import dev.gitlive.firebase.firestore.firestore
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.map
@@ -65,7 +66,7 @@ class FirestoreTripRepository : TripRepository {
      */
     override suspend fun createTrip(trip: Trip): String {
         val doc = db.collection("trips").document
-        doc.set(trip.copy(id = doc.id))
+        doc.set(trip.copy(id = doc.id, createdAt = Timestamp.ServerTimestamp, updatedAt = Timestamp.ServerTimestamp))
         return doc.id
     }
 
