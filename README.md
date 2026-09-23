@@ -121,8 +121,12 @@ times and warnings) and Day (time grid: long-press-drag to pin, snapped to 15 mi
 chronologically in one write; drag the bottom edge to resize; hatched travel legs; free-time gaps)
 views, an Add-stop "Custom entry" form, pin/unpin in the stop sheet and a Day-hours dialog.
 Pins and resizes produce activity events and pushes ("moved Belém Tower to 14:00 on Day 1").
-Not yet built from v1.1 Phase 3: Trip (multi-day) view, time-zone toggle, reminders, the ICS feed
-Function, Gemini suggestions.
+**Trip view** (branch `trip-view`): the time grid is now a shared axis plus one column per day
+(`TimeGrid` / `TimeGridColumn` in `ui/calendar/DayView.kt`); the **Trip** chip shows up to seven days
+per horizontally paged screen with compact blocks, a tappable day header that selects the day, and
+block taps that select the event (and its day) - read-only on phones, drag-to-pin and resize on
+widths >= 600 dp (design §6.6). Not yet built from v1.1 Phase 3: time-zone toggle, reminders, the
+ICS feed Function, Gemini suggestions.
 Still unverified: the Places call shapes in `shared/data/`. Cloud Functions in `firebase/functions/` still carry a TODO for Gemini.
 
 ## Layout
