@@ -1,6 +1,9 @@
 package app.tripplanner.ui
 
 import androidx.compose.foundation.clickable
+import androidx.compose.material3.RadioButton
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -61,6 +64,7 @@ fun TripListScreen(onOpenTrip: (Trip) -> Unit, onNewTrip: () -> Unit) {
     val snackbar = remember { SnackbarHostState() }
     val intake: DeepLinkIntake = koinInject()
     var showMenu by remember { mutableStateOf(false) }
+    var showLeadTime by remember { mutableStateOf(false) }
     var showJoin by remember { mutableStateOf(false) }
     var joinInput by remember { mutableStateOf("") }
 
@@ -83,6 +87,14 @@ fun TripListScreen(onOpenTrip: (Trip) -> Unit, onNewTrip: () -> Unit) {
                                 trailingIcon = { Switch(checked = state.pushEnabled, onCheckedChange = null) },
                                 onClick = { vm.setPushEnabled(!state.pushEnabled) },
                             )
+                            DropdownMenuItem(
+                                text = { Text("Time-to-leave reminders") },
+                                trailingIcon = { Switch(checked = state.reminders.enabled, onCheckedChange = null) },
+                                onClick = { vm.setReminders(!state.reminders.enabled, state.reminders.leadMin) },
+                            )
+                            if (state.reminders.enabled) {
+                                DropdownMenuItem(text = { Text("Remind ${state.reminders.leadMin} min before\u2026") }, onClick = { showMenu = false; showLeadTime = true })
+                            }
                             DropdownMenuItem(text = { Text("Sign out") }, onClick = { showMenu = false; vm.signOut() })
                         }
                     }
@@ -96,6 +108,13 @@ fun TripListScreen(onOpenTrip: (Trip) -> Unit, onNewTrip: () -> Unit) {
         },
         snackbarHost = { SnackbarHost(snackbar) },
     ) { padding ->
+        if (showLeadTime) {
+            LeadTimeDialog(
+                current = state.reminders.leadMin,
+                onPick = { min -> vm.setReminders(true, min); showLeadTime = false },
+                onDismiss = { showLeadTime = false },
+            )
+        }
         if (showJoin) {
             JoinDialog(joinInput, { joinInput = it }, onJoin = { intake.offer(joinInput) }, onDismiss = { showJoin = false })
         }
@@ -166,4 +185,32 @@ private fun SignedOut(signingIn: Boolean, onSignIn: () -> Unit) {
             else Text("Sign in with Google")
         }
     }
+}
+
+/**
+ * How long before the computed leave time a reminder fires (design v1.1 §8.5).
+ *
+ * Complexity:
+ * - **Recomposition Time:** O(1) for the fixed set of options.
+ * - **Composition Memory:** O(1).
+ */
+@Composable
+private fun LeadTimeDialog(current: Int, onPick: (Int) -> Unit, onDismiss: () -> Unit) {
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("Remind me before leaving") },
+        text = {
+            Column {
+                Text("Reminders fire before the leave time: the start of the travel leg to a stop, or the stop's start when there is none.", style = MaterialTheme.typography.bodySmall)
+                Spacer(Modifier.height(8.dp))
+                listOf(5, 10, 15, 30, 60).forEach { min ->
+                    Row(Modifier.fillMaxWidth().clickable { onPick(min) }, verticalAlignment = Alignment.CenterVertically) {
+                        RadioButton(selected = min == current, onClick = { onPick(min) })
+                        Text(if (min == 60) "1 hour" else "$min minutes")
+                    }
+                }
+            }
+        },
+        confirmButton = { TextButton(onClick = onDismiss) { Text("Close") } },
+    )
 }

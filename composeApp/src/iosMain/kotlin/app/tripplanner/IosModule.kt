@@ -5,6 +5,10 @@ import app.tripplanner.share.IosShareSheet
 import app.tripplanner.shared.di.AppConfig
 import app.tripplanner.push.IosPushTokenProvider
 import app.tripplanner.push.PushBridge
+import app.tripplanner.reminders.IosReminderScheduler
+import app.tripplanner.reminders.ReminderBridge
+import app.tripplanner.shared.feature.reminders.SyncReminders
+import app.tripplanner.shared.platform.ReminderScheduler
 import app.tripplanner.shared.feature.links.DeepLinkIntake
 import app.tripplanner.shared.platform.PushTokenProvider
 import app.tripplanner.shared.platform.ShareSheet
@@ -37,7 +41,8 @@ interface GoogleSignInBridge {
  * - **Time:** O(1) module definition.
  * - **Space:** O(1).
  */
-fun iosModule(googleSignIn: GoogleSignInBridge, push: PushBridge) = module {
+fun iosModule(googleSignIn: GoogleSignInBridge, push: PushBridge, reminders: ReminderBridge) = module {
+    single<ReminderScheduler> { IosReminderScheduler(reminders) }
     single<GoogleSignInProvider> { IosGoogleSignInProvider(googleSignIn) }
     single<ConnectivityMonitor> { IosConnectivityMonitor() }
     single<ShareSheet> { IosShareSheet() }
@@ -53,10 +58,19 @@ fun iosModule(googleSignIn: GoogleSignInBridge, push: PushBridge) = module {
  * - **Time:** O(D) where D is the number of Koin definitions registered.
  * - **Space:** O(D) for the definition registry.
  */
-fun initKoin(placesApiKey: String, googleSignIn: GoogleSignInBridge, push: PushBridge, appLinkHost: String) {
+fun initKoin(placesApiKey: String, googleSignIn: GoogleSignInBridge, push: PushBridge, reminders: ReminderBridge, appLinkHost: String) {
     val config = if (appLinkHost.isBlank()) AppConfig() else AppConfig(appLinkHost = appLinkHost)
-    startKoin { modules(sharedModule(placesApiKey, config), iosModule(googleSignIn, push)) }
+    startKoin { modules(sharedModule(placesApiKey, config), iosModule(googleSignIn, push, reminders)) }
 }
+
+/**
+ * Foreground / launch hook (design v1.1 §8.5): resyncs local reminders.
+ *
+ * Complexity:
+ * - **Time:** O(1) to request; the sync itself is O(T · S).
+ * - **Space:** O(1).
+ */
+fun syncReminders(reason: String) = KoinPlatform.getKoin().get<SyncReminders>().request(reason)
 
 /**
  * Entry for `onOpenURL` / Universal Link continuation (design §8.2). Returns false for URLs

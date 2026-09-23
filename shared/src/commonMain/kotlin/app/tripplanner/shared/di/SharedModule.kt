@@ -8,6 +8,7 @@ import app.tripplanner.shared.data.UserRepository
 import app.tripplanner.shared.feature.activity.ActivityFeedViewModel
 import app.tripplanner.shared.feature.links.DeepLinkIntake
 import app.tripplanner.shared.feature.notifications.PushRegistrar
+import app.tripplanner.shared.feature.reminders.SyncReminders
 import app.tripplanner.shared.data.CalendarApi
 import app.tripplanner.shared.data.FirestoreNetwork
 import app.tripplanner.shared.data.FirestoreNetworkSync
@@ -61,9 +62,11 @@ fun sharedModule(placesApiKey: String, config: AppConfig = AppConfig()) = module
     single<ActivityRepository> { FirestoreActivityRepository() }
     // Process-lifetime: registers this device's FCM token for the signed-in user (design §10).
     single(createdAtStart = true) { PushRegistrar(get(), get(), get()).also { it.start() } }
+    // Process-lifetime: keeps the OS's "time to leave" reminders in step with the schedule (design v1.1 §8.5).
+    single(createdAtStart = true) { SyncReminders(get(), get(), get(), get()).also { it.start() } }
     viewModel { TripListViewModel(get(), get(), get(), get()) }
     viewModel { NewTripViewModel(get(), get()) }
-    viewModel { (tripId: String) -> TripDetailViewModel(tripId, get(), get(), get(), get(), get(), get(), get()) }
+    viewModel { (tripId: String) -> TripDetailViewModel(tripId, get(), get(), get(), get(), get(), get(), get(), get()) }
     viewModel { (tripId: String) -> ActivityFeedViewModel(tripId, get(), get()) }
     viewModel { (code: String) -> JoinTripViewModel(code, get(), get()) }
     viewModel { (tripId: String) -> AddStopViewModel(tripId, get(), get(), get(), get()) }

@@ -44,6 +44,25 @@ interface ConnectivityMonitor {
     val online: kotlinx.coroutines.flow.StateFlow<Boolean>
 }
 
+/** One local "time to leave" notification (design v1.1 §8.5). [id] is stable per (trip, stop) so a resync replaces it. */
+data class Reminder(
+    val id: String,
+    val tripId: String,
+    val stopId: String,
+    val fireAtEpochSeconds: Long,
+    val title: String,
+    val body: String,
+)
+
+/**
+ * Local notifications scheduled by the OS (AlarmManager on Android, UNUserNotificationCenter on
+ * iOS, design §6.4). Only reminders this app scheduled are ever touched.
+ */
+interface ReminderScheduler {
+    /** Cancels every reminder previously scheduled here and schedules [reminders] (earliest first, already capped). */
+    fun replace(reminders: List<Reminder>)
+}
+
 /** Platform share sheet for invite links (design §8.2). */
 interface ShareSheet {
     fun share(text: String, title: String)

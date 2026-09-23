@@ -73,3 +73,28 @@ final class PushBridgeImpl: PushBridge {
         }
     }
 }
+
+/// Kotlin's `ReminderBridge`: "time to leave" reminders as calendar-trigger local notifications.
+/// A tap carries tripId/stopId in userInfo and is handled by AppDelegate like an activity push.
+final class ReminderBridgeImpl: ReminderBridge {
+    func schedule(id: String, tripId: String, stopId: String, fireAtEpochSeconds: Int64, title: String, body: String) {
+        let content = UNMutableNotificationContent()
+        content.title = title
+        content.body = body
+        content.sound = .default
+        content.threadIdentifier = tripId
+        content.userInfo = ["tripId": tripId, "stopId": stopId]
+        let date = Date(timeIntervalSince1970: TimeInterval(fireAtEpochSeconds))
+        let components = Calendar.current.dateComponents([.year, .month, .day, .hour, .minute], from: date)
+        let trigger = UNCalendarNotificationTrigger(dateMatching: components, repeats: false)
+        UNUserNotificationCenter.current().add(UNNotificationRequest(identifier: id, content: content, trigger: trigger)) { error in
+            if let error = error { NSLog("Reminders: schedule failed for %@: %@", id, error.localizedDescription) }
+        }
+    }
+
+    func cancel(ids: [String]) {
+        let center = UNUserNotificationCenter.current()
+        center.removePendingNotificationRequests(withIdentifiers: ids)
+        center.removeDeliveredNotifications(withIdentifiers: ids)
+    }
+}

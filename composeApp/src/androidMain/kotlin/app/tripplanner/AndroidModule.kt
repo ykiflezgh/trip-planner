@@ -5,6 +5,8 @@ import app.tripplanner.auth.AndroidGoogleSignInProvider
 import app.tripplanner.auth.CurrentActivity
 import app.tripplanner.net.AndroidConnectivityMonitor
 import app.tripplanner.push.AndroidPushTokenProvider
+import app.tripplanner.reminders.AndroidReminderScheduler
+import app.tripplanner.shared.platform.ReminderScheduler
 import app.tripplanner.shared.platform.PushTokenProvider
 import app.tripplanner.share.AndroidShareSheet
 import app.tripplanner.shared.platform.ShareSheet
@@ -19,6 +21,7 @@ fun androidModule() = module {
     single<ConnectivityMonitor> { AndroidConnectivityMonitor(androidContext()) }
     single<ShareSheet> { AndroidShareSheet(get()) }
     single<PushTokenProvider> { AndroidPushTokenProvider(androidContext(), get()) }
+    single<ReminderScheduler> { AndroidReminderScheduler(androidContext()) }
     single<GoogleSignInProvider> {
         AndroidGoogleSignInProvider(androidContext(), get(), androidContext().defaultWebClientId())
     }

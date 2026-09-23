@@ -8,6 +8,7 @@ import GoogleMaps
 struct iOSApp: App {
     // Push notifications need UIApplicationDelegate callbacks (design §10, PushBridge.swift).
     @UIApplicationDelegateAdaptor(AppDelegate.self) private var appDelegate
+    @Environment(\.scenePhase) private var scenePhase
 
     init() {
         // GoogleService-Info.plist is gitignored; fetch it with the Firebase CLI (docs/phase0-spike.md).
@@ -16,7 +17,7 @@ struct iOSApp: App {
         let mapsKey = Bundle.main.object(forInfoDictionaryKey: "MAPS_API_KEY") as? String ?? ""
         GMSServices.provideAPIKey(mapsKey)
         let appLinkHost = Bundle.main.object(forInfoDictionaryKey: "APP_LINK_HOST") as? String ?? ""
-        IosModuleKt.doInitKoin(placesApiKey: mapsKey, googleSignIn: GoogleSignInBridgeImpl(), push: PushBridgeImpl(), appLinkHost: appLinkHost)
+        IosModuleKt.doInitKoin(placesApiKey: mapsKey, googleSignIn: GoogleSignInBridgeImpl(), push: PushBridgeImpl(), reminders: ReminderBridgeImpl(), appLinkHost: appLinkHost)
     }
     var body: some Scene {
         WindowGroup {
@@ -31,6 +32,8 @@ struct iOSApp: App {
                 .onContinueUserActivity(NSUserActivityTypeBrowsingWeb) { activity in
                     if let url = activity.webpageURL { _ = IosModuleKt.offerInviteUrl(url: url.absoluteString) }
                 }
+                // Resync "time to leave" reminders on launch and every return to the foreground (design v1.1 §8.5).
+                .onChange(of: scenePhase) { phase in if phase == .active { IosModuleKt.syncReminders(reason: "foreground") } }
         }
     }
 }
