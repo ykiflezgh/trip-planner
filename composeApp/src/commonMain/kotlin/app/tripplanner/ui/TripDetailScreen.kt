@@ -331,10 +331,13 @@ fun TripDetailScreen(tripId: String, name: String, focusStopId: String? = null, 
     }
 
     if (showDayHours) {
+        // Day hours are stored as trip wall-clock, so the editor always works on the *unshifted*
+        // schedule, whatever the display toggle shows (review on #5); the label says which zone.
+        val stored = state.schedule
         DayHoursDialog(
-            label = dayLabel(state.trip, state.selectedDay),
-            start = schedule?.hours?.start?.let(Schedule::formatTime) ?: state.trip?.defaultDayStart.orEmpty(),
-            end = schedule?.hours?.end?.let(Schedule::formatTime) ?: state.trip?.defaultDayEnd.orEmpty(),
+            label = dayLabel(state.trip, state.selectedDay) + (if (zoned) " \u00b7 ${TimeDisplay.label(tripZone!!.id)} time" else ""),
+            start = stored?.hours?.start?.let(Schedule::formatTime) ?: state.trip?.defaultDayStart.orEmpty(),
+            end = stored?.hours?.end?.let(Schedule::formatTime) ?: state.trip?.defaultDayEnd.orEmpty(),
             onSave = { st, en -> vm.setDayHours(state.selectedDay, st, en); showDayHours = false },
             onDismiss = { showDayHours = false },
         )
