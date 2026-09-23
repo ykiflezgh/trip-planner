@@ -43,6 +43,7 @@ kotlin {
             implementation(libs.androidx.navigation.compose)
             implementation(libs.kotlinx.serialization.json) // @Serializable routes
             implementation(libs.kotlinx.datetime)
+            implementation(libs.reorderable)
             implementation(libs.koin.compose.viewmodel)
             implementation(libs.coil.compose)
             implementation(libs.coil.network.ktor)

@@ -19,6 +19,7 @@ firebaseBom = "33.15.0"                # must match the BoM GitLive was built ag
 kermit = "2.0.6"
 coil = "3.2.0"
 mapsCompose = "6.7.0"
+reorderable = "3.1.0"                 # sh.calvin.reorderable - drag-and-drop for LazyColumn on all CMP targets
 playServicesMaps = "19.2.0"
 googleid = "1.1.1"
 credentials = "1.5.0"
@@ -60,6 +61,7 @@ coil-compose = { module = "io.coil-kt.coil3:coil-compose", version.ref = "coil" 
 coil-network-ktor = { module = "io.coil-kt.coil3:coil-network-ktor3", version.ref = "coil" }
 
 maps-compose = { module = "com.google.maps.android:maps-compose", version.ref = "mapsCompose" }
+reorderable = { module = "sh.calvin.reorderable:reorderable", version.ref = "reorderable" }
 play-services-maps = { module = "com.google.android.gms:play-services-maps", version.ref = "playServicesMaps" }
 googleid = { module = "com.google.android.libraries.identity.googleid:googleid", version.ref = "googleid" }
 androidx-credentials = { module = "androidx.credentials:credentials", version.ref = "credentials" }

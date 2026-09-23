@@ -54,8 +54,13 @@ schema rules unit-tested in `NewTripTest`) -> `TripRepository.createTrip` (serve
 `PlacesApiTest` over a mock engine), stop written at the end of the chosen day
 (`PlacesSearch.appendOrderKey`). Stops carry `addedAt`/`updatedAt`/`placeFetchedAt`; the
 name/address refresh policy from §7 is still to do. The key needs **Places API (New)** in its
-API restrictions. Remaining Phase 1 items: day tabs with drag reorder, map for the selected
-day, offline UX pass (planning/issues.json).
+API restrictions. **Day tabs + reorder** (`TripDetailScreen`): tabs filter the map and list to one day; rows drag
+by their handle (sh.calvin.reorderable) and commit a single fractional-key write
+(`StopReorder.neighbours` -> `moveStop`); the stop sheet moves a stop to another day
+(`moveToDay`, end of day) or removes it; a NOT_FOUND on a concurrent delete surfaces as a
+snackbar. `StopReorderTest` includes the 500-random-move soak over `FractionalIndex`.
+Remaining Phase 1 items: map for the selected day (bounds + polyline), offline UX pass
+(planning/issues.json).
 Still unverified: the Functions/Places/Calendar call shapes in `shared/data/`. Cloud Functions in `firebase/functions/` are compile-shaped
 TypeScript with TODOs where Phase 2/3 work lands (Routes, Gemini, burst collapsing).
 
