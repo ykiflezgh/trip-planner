@@ -16,6 +16,7 @@ import app.tripplanner.schedule.TimedEntry
 import app.tripplanner.schedule.Warning
 import app.tripplanner.shared.core.util.FractionalIndex
 import app.tripplanner.ui.calendar.DayView
+import app.tripplanner.ui.calendar.TripView
 import kotlinx.datetime.LocalTime
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
@@ -103,7 +104,9 @@ fun TripDetailScreen(tripId: String, name: String, focusStopId: String? = null, 
     var showMenu by remember { mutableStateOf(false) }
     var showDayHours by remember { mutableStateOf(false) }
     // Agenda (list) or Day (time grid) - two views of the same computed schedule (design v1.1 §6.6).
-    var dayView by remember { mutableStateOf(false) }
+    // Agenda (list), Day (time grid) or Trip (multi-day grid) - three views of the same computed schedule.
+    var view by remember { mutableStateOf(CalendarView.AGENDA) }
+    val dayView = view == CalendarView.DAY
     val schedule = state.schedule
     val timed = remember(schedule) { schedule?.entries?.associateBy { it.input.id }.orEmpty() }
     val warningsById = remember(schedule) { schedule?.warnings?.groupBy { it.entryId }.orEmpty() }
@@ -191,8 +194,9 @@ fun TripDetailScreen(tripId: String, name: String, focusStopId: String? = null, 
             }
             DayTabs(trip = state.trip, dayCount = state.dayCount, selected = state.selectedDay, onSelect = vm::selectDay)
             Row(Modifier.padding(horizontal = 16.dp, vertical = 4.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                FilterChip(selected = !dayView, onClick = { dayView = false }, label = { Text("Agenda") })
-                FilterChip(selected = dayView, onClick = { dayView = true }, label = { Text("Day") })
+                FilterChip(selected = view == CalendarView.AGENDA, onClick = { view = CalendarView.AGENDA }, label = { Text("Agenda") })
+                FilterChip(selected = view == CalendarView.DAY, onClick = { view = CalendarView.DAY }, label = { Text("Day") })
+                if (state.dayCount > 1) FilterChip(selected = view == CalendarView.TRIP, onClick = { view = CalendarView.TRIP }, label = { Text("Trip") })
                 schedule?.let { sch ->
                     Text(
                         "${Schedule.formatTime(sch.hours.start)} \u2013 ${Schedule.formatTime(sch.hours.end)}" + if (sch.warnings.isNotEmpty()) "  \u00b7 \u26A0 ${sch.warnings.size}" else "",
@@ -202,7 +206,23 @@ fun TripDetailScreen(tripId: String, name: String, focusStopId: String? = null, 
                     )
                 }
             }
-            if (dayView && schedule != null) {
+            if (view == CalendarView.TRIP && state.trip != null) {
+                TripView(
+                    schedules = (0 until state.dayCount).map { it to state.scheduleFor(it) },
+                    dayLabel = { day -> dayLabel(state.trip, day) },
+                    selectedDay = state.selectedDay,
+                    selectedId = state.selectedStopId,
+                    canEdit = state.canEdit,
+                    onSelectDay = vm::selectDay,
+                    onSelect = { day, id -> vm.selectDay(day); vm.selectStop(id) },
+                    onPin = { day, id, start ->
+                        val sch = state.scheduleFor(day)
+                        vm.pinEntry(id, Schedule.formatTime(start), sch?.let { chronologicalOrder(it, state.stopsByDay[day].orEmpty(), id, start) })
+                    },
+                    onResize = vm::resizeEntry,
+                    modifier = Modifier.fillMaxSize(),
+                )
+            } else if (dayView && schedule != null) {
                 DayView(
                     schedule = schedule,
                     selectedId = state.selectedStopId,
@@ -587,3 +607,6 @@ private fun StopSheet(
         }
     }
 }
+
+/** Which of the three calendar views (design v1.1 §6.6) the trip screen shows. */
+private enum class CalendarView { AGENDA, DAY, TRIP }
