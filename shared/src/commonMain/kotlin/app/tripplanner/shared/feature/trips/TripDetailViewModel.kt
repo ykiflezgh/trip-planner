@@ -5,6 +5,7 @@ import androidx.lifecycle.viewModelScope
 import app.tripplanner.shared.core.model.Stop
 import app.tripplanner.shared.core.model.Trip
 import app.tripplanner.shared.data.TripRepository
+import app.tripplanner.shared.platform.ConnectivityMonitor
 import co.touchlab.kermit.Logger
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
@@ -24,7 +25,10 @@ data class TripDetailUiState(
     val error: String? = null,
     /** One-shot user message (e.g. a concurrent delete); the screen shows it and calls [TripDetailViewModel.consumeMessage]. */
     val message: String? = null,
+    val online: Boolean = true,
 ) {
+    /** True while any local write on this trip awaits the server (design §9). */
+    val pendingSync: Boolean get() = trip?.pendingSync == true || stopsByDay.values.any { day -> day.any { it.pendingSync } }
     /** Days in the trip (inclusive of both ends); 1 until the trip document arrives. */
     val dayCount: Int get() = trip?.let { TripDays.count(it) } ?: 1
     /** Stops of the selected day in itinerary order (the repository sorts by fractional key). */
@@ -34,6 +38,7 @@ data class TripDetailUiState(
 class TripDetailViewModel(
     private val tripId: String,
     private val repo: TripRepository,
+    connectivity: ConnectivityMonitor,
 ) : ViewModel() {
 
     private val log = Logger.withTag("TripDetail")
@@ -55,9 +60,10 @@ class TripDetailViewModel(
      * - **Space:** O(S) auxiliary heap space to hold the grouped map and stop lists.
      */
     val state: StateFlow<TripDetailUiState> =
-        combine(stops, trip, selectedStopId, selectedDay, message) { s, t, sel, day, msg ->
-            s.copy(trip = t, selectedStopId = sel, selectedDay = day, message = msg)
-        }
+        combine(
+            combine(stops, trip, connectivity.online) { s, t, online -> s.copy(trip = t, online = online) },
+            selectedStopId, selectedDay, message,
+        ) { s, sel, day, msg -> s.copy(selectedStopId = sel, selectedDay = day, message = msg) }
             .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), TripDetailUiState())
 
     /**

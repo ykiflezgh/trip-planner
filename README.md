@@ -62,8 +62,14 @@ snackbar. `StopReorderTest` includes the 500-random-move soak over `FractionalIn
 **Map for the selected day:** both `MapView` actuals draw a polyline through the day's stops
 in itinerary order and fit the camera to them whenever the set of stops changes with nothing
 selected (Android gates on `onMapLoaded`, iOS on the first non-empty layout); selection still
-animates to the stop without zooming out. Remaining Phase 1 item: offline UX pass
-(planning/issues.json).
+animates to the stop without zooming out. **Offline UX** (design §9): `Trip`/`Stop` carry a transient `pendingSync` from snapshot metadata
+(`hasPendingWrites`) shown as "syncing…" on rows and the day header; a `ConnectivityMonitor`
+boundary (Android `ConnectivityManager`, iOS `nw_path_monitor`) drives an offline banner on the
+trip detail and disables Places search with a message; the repository logs `listen`/`unlisten`
+so listener scoping can be checked in the device log (both trip listeners detach ~5 s after
+leaving the screen, `WhileSubscribed`). Verified with an airplane-mode reorder -> relaunch ->
+reconnect round trip on Android. Calendar export (Phase 2) must reuse the same gate.
+All five Phase 1 roadmap items are on this branch.
 Still unverified: the Functions/Places/Calendar call shapes in `shared/data/`. Cloud Functions in `firebase/functions/` are compile-shaped
 TypeScript with TODOs where Phase 2/3 work lands (Routes, Gemini, burst collapsing).
 

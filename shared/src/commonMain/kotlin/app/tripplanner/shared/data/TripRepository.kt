@@ -6,8 +6,11 @@ import app.tripplanner.shared.core.util.FractionalIndex
 import dev.gitlive.firebase.Firebase
 import dev.gitlive.firebase.firestore.Timestamp
 import dev.gitlive.firebase.firestore.firestore
+import co.touchlab.kermit.Logger
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.map
+import kotlinx.coroutines.flow.onCompletion
+import kotlinx.coroutines.flow.onStart
 
 interface TripRepository {
     fun myTrips(uid: String): Flow<List<Trip>>
@@ -31,6 +34,11 @@ interface TripRepository {
  */
 class FirestoreTripRepository : TripRepository {
     private val db = Firebase.firestore
+    private val log = Logger.withTag("Firestore")
+
+    /** Logs listener attach/detach so listener scoping (design §9) can be checked in the device log. */
+    private fun <T> Flow<T>.logListener(name: String): Flow<T> =
+        onStart { log.i { "listen $name" } }.onCompletion { log.i { "unlisten $name" } }
 
     /**
      * Observes real-time trips belonging to the user [uid].
@@ -43,7 +51,8 @@ class FirestoreTripRepository : TripRepository {
         db.collection("trips")
             .where { "memberIds" contains uid }
             .snapshots
-            .map { qs -> qs.documents.map { it.data<Trip>().copy(id = it.id) } }
+            .map { qs -> qs.documents.map { it.data<Trip>().copy(id = it.id, pendingSync = it.metadata.hasPendingWrites) } }
+            .logListener("trips[member=$uid]")
 
     /**
      * Observes one trip document.
@@ -54,7 +63,8 @@ class FirestoreTripRepository : TripRepository {
      */
     override fun trip(tripId: String): Flow<Trip?> =
         db.collection("trips").document(tripId).snapshots
-            .map { snap -> if (snap.exists) snap.data<Trip>().copy(id = snap.id) else null }
+            .map { snap -> if (snap.exists) snap.data<Trip>().copy(id = snap.id, pendingSync = snap.metadata.hasPendingWrites) else null }
+            .logListener("trips/$tripId")
 
     /**
      * Observes real-time stops for [tripId] sorted by day and fractional index order.
@@ -67,9 +77,10 @@ class FirestoreTripRepository : TripRepository {
         db.collection("trips").document(tripId).collection("stops")
             .snapshots // client-side sort keeps the composite index optional on the read path
             .map { qs ->
-                qs.documents.map { it.data<Stop>().copy(id = it.id) }
+                qs.documents.map { it.data<Stop>().copy(id = it.id, pendingSync = it.metadata.hasPendingWrites) }
                     .sortedWith(compareBy({ it.day }, { it.order }))
             }
+            .logListener("trips/$tripId/stops")
 
     /**
      * Creates a new trip document.

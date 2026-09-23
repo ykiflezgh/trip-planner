@@ -19,8 +19,9 @@ import org.koin.dsl.module
 
 /**
  * [placesApiKey] comes from platform config (manifest placeholder / plist), not source.
- * Platform boundaries ([app.tripplanner.shared.platform.GoogleSignInProvider], ...) are
- * bound by the platform module started alongside this one (design §6.4).
+ * Platform boundaries ([app.tripplanner.shared.platform.GoogleSignInProvider],
+ * [app.tripplanner.shared.platform.ConnectivityMonitor], ...) are bound by the platform
+ * module started alongside this one (design §6.4).
  */
 fun sharedModule(placesApiKey: String) = module {
     single {
@@ -36,6 +37,6 @@ fun sharedModule(placesApiKey: String) = module {
     single { PlanningFunctions() }
     viewModel { TripListViewModel(get(), get()) }
     viewModel { NewTripViewModel(get(), get()) }
-    viewModel { (tripId: String) -> TripDetailViewModel(tripId, get()) }
-    viewModel { (tripId: String) -> AddStopViewModel(tripId, get(), get(), get()) }
+    viewModel { (tripId: String) -> TripDetailViewModel(tripId, get(), get()) }
+    viewModel { (tripId: String) -> AddStopViewModel(tripId, get(), get(), get(), get()) }
 }

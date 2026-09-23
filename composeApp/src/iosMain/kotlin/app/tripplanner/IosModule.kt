@@ -1,6 +1,8 @@
 package app.tripplanner
 
+import app.tripplanner.net.IosConnectivityMonitor
 import app.tripplanner.shared.di.sharedModule
+import app.tripplanner.shared.platform.ConnectivityMonitor
 import app.tripplanner.shared.platform.GoogleSignInProvider
 import app.tripplanner.shared.platform.GoogleTokens
 import app.tripplanner.shared.platform.SignInCancelledException
@@ -29,6 +31,7 @@ interface GoogleSignInBridge {
  */
 fun iosModule(googleSignIn: GoogleSignInBridge) = module {
     single<GoogleSignInProvider> { IosGoogleSignInProvider(googleSignIn) }
+    single<ConnectivityMonitor> { IosConnectivityMonitor() }
 }
 
 /**

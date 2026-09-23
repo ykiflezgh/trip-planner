@@ -104,6 +104,15 @@ fun TripDetailScreen(tripId: String, name: String, onBack: () -> Unit) {
         snackbarHost = { SnackbarHost(snackbar) },
     ) { padding ->
         Column(Modifier.fillMaxSize().padding(padding)) {
+            if (!state.online) {
+                Surface(color = MaterialTheme.colorScheme.tertiaryContainer, modifier = Modifier.fillMaxWidth()) {
+                    Text(
+                        "Offline \u2014 changes are saved on this device and sync when you're back online",
+                        Modifier.padding(horizontal = 16.dp, vertical = 8.dp),
+                        style = MaterialTheme.typography.bodySmall,
+                    )
+                }
+            }
             DayTabs(trip = state.trip, dayCount = state.dayCount, selected = state.selectedDay, onSelect = vm::selectDay)
             LazyColumn(Modifier.fillMaxSize().testTagCompat("stop_list"), state = listState) {
                 item(key = "map") {
@@ -126,7 +135,7 @@ fun TripDetailScreen(tripId: String, name: String, onBack: () -> Unit) {
                             state.loading -> "Loading…"
                             localStops.isEmpty() -> "No stops on this day — add one"
                             else -> "${localStops.size} stop${if (localStops.size == 1) "" else "s"} · drag ≡ to reorder"
-                        },
+                        } + if (state.pendingSync) "  \u00b7 syncing\u2026" else "",
                         Modifier.padding(horizontal = 16.dp, vertical = 12.dp),
                         style = MaterialTheme.typography.titleMedium,
                     )
@@ -231,7 +240,7 @@ private fun ReorderableCollectionItemScope.StopRow(
             modifier = Modifier.clickable(onClick = onClick),
             leadingContent = { Text("$position", style = MaterialTheme.typography.titleMedium) },
             headlineContent = { Text(stop.name) },
-            supportingContent = { Text(stop.address) },
+            supportingContent = { Text(stop.address + if (stop.pendingSync) "  \u00b7 syncing\u2026" else "") },
             trailingContent = {
                 Text(
                     "≡",

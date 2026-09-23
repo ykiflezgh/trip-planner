@@ -2,6 +2,7 @@ package app.tripplanner.shared.core.model
 
 import dev.gitlive.firebase.firestore.BaseTimestamp
 import kotlinx.serialization.Serializable
+import kotlinx.serialization.Transient
 
 enum class Role { OWNER, EDITOR, VIEWER }
 enum class TravelMode { DRIVE, WALK } // TRANSIT deferred; transit_mode_enabled ships off (design SS18)
@@ -18,6 +19,8 @@ data class Trip(
     val roles: Map<String, String> = emptyMap(), // uid -> "owner" | "editor" | "viewer" (lower-case, rules compare strings)
     val createdAt: BaseTimestamp? = null,         // server timestamps (§7); null in a local snapshot before the server ack
     val updatedAt: BaseTimestamp? = null,
+    /** Snapshot metadata, not a field: true while a local write awaits the server (design §9). */
+    @Transient val pendingSync: Boolean = false,
 )
 
 @Serializable
@@ -37,6 +40,8 @@ data class Stop(
     val updatedAt: BaseTimestamp? = null,
     /** When name/address/coords were fetched from Places: only placeId + coordinates are durable, the rest is a cache to refresh within Google's limits (§7). */
     val placeFetchedAt: BaseTimestamp? = null,
+    /** Snapshot metadata, not a field: true while a local write awaits the server (design §9). */
+    @Transient val pendingSync: Boolean = false,
 )
 
 @Serializable

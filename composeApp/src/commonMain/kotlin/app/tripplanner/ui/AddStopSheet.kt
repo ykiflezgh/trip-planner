@@ -87,12 +87,14 @@ fun AddStopSheet(
                 onValueChange = vm::setQuery,
                 label = { Text("Search places") },
                 singleLine = true,
+                enabled = state.online,
                 modifier = Modifier.fillMaxWidth().focusRequester(focus),
                 trailingIcon = {
                     if (state.searching || state.adding) CircularProgressIndicator(Modifier.size(20.dp), strokeWidth = 2.dp)
                 },
             )
             val status = when {
+                !state.online -> "Search needs a connection \u2014 you're offline"
                 state.error != null -> state.error
                 state.needsMoreInput -> "Type at least ${PlacesSearch.MIN_QUERY_LENGTH} characters"
                 !state.searching && state.suggestions.isEmpty() -> "No matches"
@@ -103,7 +105,7 @@ fun AddStopSheet(
                     it,
                     Modifier.padding(vertical = 8.dp),
                     style = MaterialTheme.typography.bodyMedium,
-                    color = if (state.error != null) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurfaceVariant,
+                    color = if (state.error != null || !state.online) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurfaceVariant,
                 )
             }
             LazyColumn(Modifier.fillMaxWidth()) {

@@ -30,5 +30,13 @@ interface PushTokenProvider {
     suspend fun currentToken(): String?
 }
 
+/**
+ * Network reachability (design §9): search and export need connectivity, so the UI disables
+ * them with a message while offline. Firestore writes never wait for this - they queue locally.
+ */
+interface ConnectivityMonitor {
+    val online: kotlinx.coroutines.flow.StateFlow<Boolean>
+}
+
 /** Thrown by [GoogleSignInProvider.signIn] when the user dismisses the platform UI. */
 class SignInCancelledException : Exception("Sign-in cancelled")

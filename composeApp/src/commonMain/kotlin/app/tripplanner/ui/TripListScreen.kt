@@ -85,7 +85,7 @@ fun TripListScreen(onOpenTrip: (Trip) -> Unit, onNewTrip: () -> Unit) {
                         ListItem(
                             modifier = Modifier.clickable { onOpenTrip(trip) },
                             headlineContent = { Text(trip.name) },
-                            supportingContent = { Text("${trip.startDate} – ${trip.endDate}") },
+                            supportingContent = { Text("${trip.startDate} \u2013 ${trip.endDate}" + if (trip.pendingSync) "  \u00b7 syncing\u2026" else "") },
                         )
                     }
                 }

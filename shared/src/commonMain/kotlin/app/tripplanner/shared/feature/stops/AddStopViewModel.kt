@@ -7,6 +7,7 @@ import app.tripplanner.shared.data.AuthRepository
 import app.tripplanner.shared.data.PlacesApi
 import app.tripplanner.shared.data.PlacesApi.PlaceSuggestion
 import app.tripplanner.shared.data.TripRepository
+import app.tripplanner.shared.platform.ConnectivityMonitor
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.FlowPreview
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -29,6 +30,7 @@ data class AddStopUiState(
     val error: String? = null,
     /** Set when the stop write is acknowledged locally; the sheet closes and selects it. */
     val addedStopId: String? = null,
+    val online: Boolean = true,
 ) {
     val needsMoreInput: Boolean get() = !PlacesSearch.shouldQuery(query)
 }
@@ -44,18 +46,21 @@ class AddStopViewModel(
     private val places: PlacesApi,
     private val repo: TripRepository,
     private val auth: AuthRepository,
+    connectivity: ConnectivityMonitor,
 ) : ViewModel() {
 
-    private val _state = MutableStateFlow(AddStopUiState())
+    private val _state = MutableStateFlow(AddStopUiState(online = connectivity.online.value))
     val state: StateFlow<AddStopUiState> = _state.asStateFlow()
     private var sessionToken = PlacesSearch.newSessionToken()
 
     init {
+        // Search needs connectivity (design §9): the sheet disables the field with a message.
+        connectivity.online.onEach { online -> _state.update { it.copy(online = online) } }.launchIn(viewModelScope)
         _state.map { it.query.trim() }
             .debounce(PlacesSearch.DEBOUNCE_MS)
             .distinctUntilChanged()
             .mapLatest { q ->
-                if (!PlacesSearch.shouldQuery(q)) return@mapLatest Result.success(emptyList())
+                if (!PlacesSearch.shouldQuery(q) || !_state.value.online) return@mapLatest Result.success(emptyList())
                 _state.update { it.copy(searching = true, error = null) }
                 runCatching { places.autocomplete(q, sessionToken) }
             }
