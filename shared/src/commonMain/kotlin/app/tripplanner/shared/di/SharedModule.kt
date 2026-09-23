@@ -17,7 +17,7 @@ import app.tripplanner.shared.data.PlacesApi
 import app.tripplanner.shared.data.PlanningFunctions
 import app.tripplanner.shared.data.TripRepository
 import app.tripplanner.shared.feature.invites.JoinTripViewModel
-import app.tripplanner.shared.feature.stops.AddStopViewModel
+import app.tripplanner.shared.feature.events.AddEventViewModel
 import app.tripplanner.shared.feature.trips.NewTripViewModel
 import app.tripplanner.shared.feature.trips.TripDetailViewModel
 import app.tripplanner.shared.feature.trips.TripListViewModel
@@ -66,5 +66,5 @@ fun sharedModule(placesApiKey: String, config: AppConfig = AppConfig()) = module
     viewModel { (tripId: String) -> TripDetailViewModel(tripId, get(), get(), get(), get(), get(), get(), get()) }
     viewModel { (tripId: String) -> ActivityFeedViewModel(tripId, get(), get()) }
     viewModel { (code: String) -> JoinTripViewModel(code, get(), get()) }
-    viewModel { (tripId: String) -> AddStopViewModel(tripId, get(), get(), get(), get()) }
+    viewModel { (tripId: String) -> AddEventViewModel(tripId, get(), get(), get(), get()) }
 }

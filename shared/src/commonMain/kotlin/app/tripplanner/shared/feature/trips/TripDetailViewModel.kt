@@ -2,7 +2,11 @@ package app.tripplanner.shared.feature.trips
 
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
-import app.tripplanner.shared.core.model.Stop
+import app.tripplanner.schedule.DaySchedule
+import app.tripplanner.schedule.Schedule
+import app.tripplanner.shared.core.model.DayHoursDoc
+import app.tripplanner.shared.core.model.Event
+import app.tripplanner.shared.feature.calendar.DaySchedules
 import app.tripplanner.shared.core.model.TravelLeg
 import app.tripplanner.shared.core.model.TravelMode
 import app.tripplanner.shared.core.model.Trip
@@ -32,17 +36,21 @@ import kotlinx.coroutines.withTimeoutOrNull
 data class TripDetailUiState(
     val loading: Boolean = true,
     val trip: Trip? = null,
-    val stopsByDay: Map<Int, List<Stop>> = emptyMap(),
+    val eventsByDay: Map<Int, List<Event>> = emptyMap(),
     val selectedDay: Int = 0,
-    val selectedStopId: String? = null,
+    val selectedEventId: String? = null,
     val error: String? = null,
     /** One-shot user message (e.g. a concurrent delete); the screen shows it and calls [TripDetailViewModel.consumeMessage]. */
     val message: String? = null,
     val online: Boolean = true,
     /** The signed-in user owns this trip: only owners can share it (design §8.2). */
     val isOwner: Boolean = false,
+    /** Owner or editor: may reorder, pin, resize and set day hours; viewers see the same calendar read-only. */
+    val canEdit: Boolean = false,
     val sharing: Boolean = false,
-    /** Travel legs by (fromStopId, toStopId, mode) (design §8.3); absent = still computing. */
+    /** Per-day hour overrides (design v1.2 §7). */
+    val dayHours: Map<Int, DayHoursDoc> = emptyMap(),
+    /** Travel legs by (fromEventId, toEventId, mode) (design §8.3); absent = still computing. */
     val legs: Map<Triple<String, String, TravelMode>, TravelLeg> = emptyMap(),
     /** This user muted push for this trip (`users/{uid}.notificationPrefs.mutedTripIds`, design §10). */
     val muted: Boolean = false,
@@ -50,18 +58,35 @@ data class TripDetailUiState(
     val shareUrl: String? = null,
 ) {
     /** True while any local write on this trip awaits the server (design §9). */
-    val pendingSync: Boolean get() = trip?.pendingSync == true || stopsByDay.values.any { day -> day.any { it.pendingSync } }
+    val pendingSync: Boolean get() = trip?.pendingSync == true || eventsByDay.values.any { day -> day.any { it.pendingSync } }
     /** Days in the trip (inclusive of both ends); 1 until the trip document arrives. */
     val dayCount: Int get() = trip?.let { TripDays.count(it) } ?: 1
-    /** Stops of the selected day in itinerary order (the repository sorts by fractional key). */
-    val stopsForSelectedDay: List<Stop> get() = stopsByDay[selectedDay].orEmpty()
+    /** Events of the selected day in itinerary order (the repository sorts by fractional key). */
+    val eventsForSelectedDay: List<Event> get() = eventsByDay[selectedDay].orEmpty()
 
     /**
      * Complexity:
      * - **Time:** O(1) map lookup.
      * - **Space:** O(1).
      */
-    fun leg(fromStopId: String, toStopId: String, mode: TravelMode): TravelLeg? = legs[Triple(fromStopId, toStopId, mode)]
+    fun leg(fromEventId: String, toEventId: String, mode: TravelMode): TravelLeg? = legs[Triple(fromEventId, toEventId, mode)]
+
+    /**
+     * The selected day on the clock (design v1.2 §8.4): computed here from the same data every
+     * device holds, never stored. `null` until the trip document arrives.
+     *
+     * Complexity:
+     * - **Time:** O(E) for the E events of the day (engine pass).
+     * - **Space:** O(E).
+     */
+    val schedule: DaySchedule? get() = scheduleFor(selectedDay)
+
+    /**
+     * Complexity:
+     * - **Time:** O(E).
+     * - **Space:** O(E).
+     */
+    fun scheduleFor(day: Int): DaySchedule? = trip?.let { DaySchedules.compute(it, day, eventsByDay[day].orEmpty(), legs, dayHours[day]) }
 }
 
 class TripDetailViewModel(
@@ -76,18 +101,19 @@ class TripDetailViewModel(
 ) : ViewModel() {
 
     private val log = Logger.withTag("TripDetail")
-    private val selectedStopId = MutableStateFlow<String?>(null)
+    private val selectedEventId = MutableStateFlow<String?>(null)
     private val selectedDay = MutableStateFlow(0)
     private val message = MutableStateFlow<String?>(null)
     private val share = MutableStateFlow<Pair<Boolean, String?>>(false to null) // sharing, shareUrl
     /** UI-only state folded into one flow so the outer combine stays within the typed arity. */
-    private data class Local(val selectedStopId: String?, val selectedDay: Int, val message: String?, val sharing: Boolean, val shareUrl: String?)
+    private data class Local(val selectedEventId: String?, val selectedDay: Int, val message: String?, val sharing: Boolean, val shareUrl: String?)
 
-    private val stops = repo.stops(tripId)
-        .map { stops -> TripDetailUiState(loading = false, stopsByDay = stops.groupBy { it.day }) }
-        .catch { emit(TripDetailUiState(loading = false, error = it.message ?: "Could not load stops")) }
+    private val events = repo.events(tripId)
+        .map { evs -> TripDetailUiState(loading = false, eventsByDay = evs.groupBy { it.day }) }
+        .catch { emit(TripDetailUiState(loading = false, error = it.message ?: "Could not load events")) }
     private val trip = repo.trip(tripId).catch { emit(null) }
     private val travel = repo.travel(tripId).catch { emit(emptyList()) }
+    private val days = repo.days(tripId).catch { emit(emptyList()) }
     @OptIn(ExperimentalCoroutinesApi::class)
     private val muted = auth.user.flatMapLatest { u -> if (u == null) flowOf(false) else users.prefs(u.uid).map { tripId in it.mutedTripIds } }.catch { emit(false) }
 
@@ -95,60 +121,61 @@ class TripDetailViewModel(
         // Writes apply locally at once; rejections arrive here later (design §7, §9).
         viewModelScope.launch {
             repo.writeFailures.collect { f ->
-                message.value = if (f.notFound) "That stop was removed by another member" else "Could not ${f.operation}: ${f.message}"
+                message.value = if (f.notFound) "That event was removed by another member" else "Could not ${f.operation}: ${f.message}"
             }
         }
     }
 
     /**
-     * UI state stream. Emits a new [TripDetailUiState] when stops or the selection change.
+     * UI state stream. Emits a new [TripDetailUiState] when events or the selection change.
      *
      * Complexity:
-     * - **Time:** O(S) per stops emission, where S is the number of stops in the trip (due to
-     *   `stops.groupBy { it.day }`); O(L) per travel emission for L legs; O(1) per trip or
+     * - **Time:** O(E) per events emission, where E is the number of events in the trip (due to
+     *   `events.groupBy { it.day }`); O(L) per travel emission for L legs; O(1) per trip or
      *   selection change (shallow copy).
-     * - **Space:** O(S + L) auxiliary heap space for the grouped stops and the leg map.
+     * - **Space:** O(S + L) auxiliary heap space for the grouped events and the leg map.
      */
     val state: StateFlow<TripDetailUiState> =
         combine(
-            combine(stops, trip, connectivity.online, muted) { s, t, online, m ->
+            combine(events, trip, connectivity.online, muted) { s, t, online, m ->
                 val uid = auth.currentUser?.uid
-                s.copy(trip = t, online = online, muted = m, isOwner = uid != null && t?.roles?.get(uid) == "owner")
+                val role = uid?.let { t?.roles?.get(it) }
+                s.copy(trip = t, online = online, muted = m, isOwner = role == "owner", canEdit = role == "owner" || role == "editor")
             },
-            travel.map { legs -> legs.associateBy { Triple(it.fromStopId, it.toStopId, it.mode) } },
-            combine(selectedStopId, selectedDay, message, share) { sel, day, msg, sh -> Local(sel, day, msg, sh.first, sh.second) },
-        ) { s, legs, l ->
-            s.copy(legs = legs, selectedStopId = l.selectedStopId, selectedDay = l.selectedDay, message = l.message, sharing = l.sharing, shareUrl = l.shareUrl)
+            combine(travel, days) { legs, d -> legs.associateBy { Triple(it.fromEventId, it.toEventId, it.mode) } to d.associateBy { it.day } },
+            combine(selectedEventId, selectedDay, message, share) { sel, day, msg, sh -> Local(sel, day, msg, sh.first, sh.second) },
+        ) { s, td, l ->
+            s.copy(legs = td.first, dayHours = td.second, selectedEventId = l.selectedEventId, selectedDay = l.selectedDay, message = l.message, sharing = l.sharing, shareUrl = l.shareUrl)
         }
             .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), TripDetailUiState())
 
     /**
-     * Map-marker tap lands here (platform map -> Kotlin, design §6.4). `null` clears.
+     * Map-marker tap (the marker is the event's stop) or row tap lands here (design §6.4). `null` clears.
      *
      * Complexity:
      * - **Time:** O(1) state update + one log line.
      * - **Space:** O(1).
      */
-    fun selectStop(stopId: String?) {
-        log.i { "selectStop($stopId)" }
-        selectedStopId.value = stopId
+    fun selectEvent(eventId: String?) {
+        log.i { "selectEvent($eventId)" }
+        selectedEventId.value = eventId
     }
 
     /**
-     * Notification deep link (design §10): once the stops arrive, show the stop's day and open it.
-     * Gives up quietly if the stop is gone (removed since the notification was sent).
+     * Notification deep link (design §10): once the events arrive, show its day and open it.
+     * Gives up quietly if the event is gone (removed since the notification was sent).
      *
      * Complexity:
-     * - **Time:** O(S) to locate the stop among S stops on the first snapshot that has it.
+     * - **Time:** O(E) to locate the event among E events on the first snapshot that has it.
      * - **Space:** O(1).
      */
-    fun focusStop(stopId: String) {
+    fun focusEvent(eventId: String) {
         viewModelScope.launch {
-            val stop = withTimeoutOrNull(FOCUS_TIMEOUT_MS) {
-                state.map { s -> s.stopsByDay.values.asSequence().flatten().firstOrNull { it.id == stopId } }.first { it != null }
+            val event = withTimeoutOrNull(FOCUS_TIMEOUT_MS) {
+                state.map { s -> s.eventsByDay.values.asSequence().flatten().firstOrNull { it.id == eventId } }.first { it != null }
             } ?: return@launch
-            selectedDay.value = stop.day
-            selectedStopId.value = stop.id
+            selectedDay.value = event.day
+            selectedEventId.value = event.id
         }
     }
 
@@ -170,20 +197,20 @@ class TripDetailViewModel(
      * - **Time:** O(L) where L is the length of the fractional index key (effectively O(1)) + one queued write.
      * - **Space:** O(1) auxiliary heap space.
      */
-    fun moveStop(stopId: String, day: Int, afterOrder: String?, beforeOrder: String?) {
-        repo.moveStop(tripId, stopId, day, afterOrder, beforeOrder, updatedBy = auth.currentUser?.uid.orEmpty())
+    fun moveEvent(eventId: String, day: Int, afterOrder: String?, beforeOrder: String?) {
+        repo.moveEvent(tripId, eventId, day, afterOrder, beforeOrder, updatedBy = auth.currentUser?.uid.orEmpty())
     }
 
     /**
-     * Cross-day move: the stop lands at the end of [day].
+     * Cross-day move: the event lands at the end of [day].
      *
      * Complexity:
      * - **Time:** O(1) lookup of the target day's last key + one write.
      * - **Space:** O(1).
      */
-    fun moveToDay(stopId: String, day: Int) {
-        val last = state.value.stopsByDay[day]?.lastOrNull()?.order
-        moveStop(stopId, day, afterOrder = last, beforeOrder = null)
+    fun moveToDay(eventId: String, day: Int) {
+        val last = state.value.eventsByDay[day]?.lastOrNull()?.order
+        moveEvent(eventId, day, afterOrder = last, beforeOrder = null)
     }
 
     /**
@@ -191,9 +218,9 @@ class TripDetailViewModel(
      * - **Time:** O(1) document delete.
      * - **Space:** O(1).
      */
-    fun deleteStop(stopId: String) {
-        if (selectedStopId.value == stopId) selectedStopId.value = null
-        repo.deleteStop(tripId, stopId)
+    fun deleteEvent(eventId: String) {
+        if (selectedEventId.value == eventId) selectedEventId.value = null
+        repo.deleteEvent(tripId, eventId)
     }
 
     /**
@@ -225,6 +252,52 @@ class TripDetailViewModel(
      */
     fun consumeShare() {
         share.value = false to null
+    }
+
+    /**
+     * Pins an event to a wall-clock start (drag in Day view, design v1.1 §8.4 step 2): one write
+     * that also moves it to [order] so the list stays chronological; `null` order keeps its place.
+     *
+     * Complexity:
+     * - **Time:** O(1) queued write.
+     * - **Space:** O(1).
+     */
+    fun pinEvent(eventId: String, hhmm: String, order: String?) {
+        if (Schedule.parseTime(hhmm) == null) return
+        repo.setFixedStart(tripId, eventId, hhmm, order, updatedBy = auth.currentUser?.uid.orEmpty())
+    }
+
+    /**
+     * Returns an event to the computed flow.
+     *
+     * Complexity:
+     * - **Time:** O(1) queued write.
+     * - **Space:** O(1).
+     */
+    fun unpinEvent(eventId: String) = repo.setFixedStart(tripId, eventId, null, null, updatedBy = auth.currentUser?.uid.orEmpty())
+
+    /**
+     * Drag of a block's bottom edge (design v1.2 §8.4 step 3); clamped to the engine's bounds.
+     *
+     * Complexity:
+     * - **Time:** O(1) queued write.
+     * - **Space:** O(1).
+     */
+    fun resizeEvent(eventId: String, durationMin: Int) =
+        repo.setDuration(tripId, eventId, durationMin.coerceIn(Schedule.MIN_DURATION_MIN, Schedule.MAX_DURATION_MIN), updatedBy = auth.currentUser?.uid.orEmpty())
+
+    /**
+     * Per-day hours (design v1.2 §8.4 step 4). Ignores malformed times.
+     *
+     * Complexity:
+     * - **Time:** O(1) queued write.
+     * - **Space:** O(1).
+     */
+    fun setDayHours(day: Int, start: String, end: String) {
+        val s = Schedule.parseTime(start) ?: return
+        val e = Schedule.parseTime(end) ?: return
+        if (e <= s) { message.value = "The day must end after it starts"; return }
+        repo.setDayHours(tripId, day, start, end, updatedBy = auth.currentUser?.uid.orEmpty())
     }
 
     /**

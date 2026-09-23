@@ -28,7 +28,7 @@ object NewTripRoute
 
 /** [name] may be blank when opened from a notification; the screen then uses the live trip name. */
 @Serializable
-data class TripDetailRoute(val tripId: String, val name: String, val focusStopId: String? = null)
+data class TripDetailRoute(val tripId: String, val name: String, val focusEventId: String? = null)
 
 @Serializable
 data class ActivityRoute(val tripId: String, val name: String)
@@ -58,7 +58,7 @@ fun App() {
             if (pending != null && user != null) {
                 when (val link = intake.consume()) {
                     is DeepLink.Join -> nav.navigate(JoinRoute(link.code)) { launchSingleTop = true }
-                    is DeepLink.OpenTrip -> nav.navigate(TripDetailRoute(link.tripId, name = "", focusStopId = link.stopId)) {
+                    is DeepLink.OpenTrip -> nav.navigate(TripDetailRoute(link.tripId, name = "", focusEventId = link.eventId)) {
                         popUpTo<TripListRoute>()
                         launchSingleTop = true
                     }
@@ -95,7 +95,7 @@ fun App() {
                 TripDetailScreen(
                     tripId = route.tripId,
                     name = route.name,
-                    focusStopId = route.focusStopId,
+                    focusEventId = route.focusEventId,
                     onOpenActivity = { title -> nav.navigate(ActivityRoute(route.tripId, title)) },
                     onBack = { if (!nav.popBackStack()) nav.navigate(TripListRoute) { popUpTo<TripListRoute>() } },
                 )

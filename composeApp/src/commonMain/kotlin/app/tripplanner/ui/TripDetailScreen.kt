@@ -10,6 +10,15 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
+import app.tripplanner.schedule.DaySchedule
+import app.tripplanner.schedule.Schedule
+import app.tripplanner.schedule.TimedEvent
+import app.tripplanner.schedule.Warning
+import app.tripplanner.shared.core.util.FractionalIndex
+import app.tripplanner.ui.calendar.DayView
+import kotlinx.datetime.LocalTime
+import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.Button
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.Box
@@ -57,12 +66,12 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
-import app.tripplanner.shared.core.model.Stop
+import app.tripplanner.shared.core.model.Event
 import app.tripplanner.shared.core.model.TravelLeg
 import app.tripplanner.shared.core.model.TravelMode
 import app.tripplanner.shared.core.model.Trip
 import app.tripplanner.shared.feature.trips.TravelText
-import app.tripplanner.shared.feature.stops.StopReorder
+import app.tripplanner.shared.feature.events.EventReorder
 import app.tripplanner.shared.feature.trips.TripDays
 import app.tripplanner.shared.feature.trips.TripDetailViewModel
 import app.tripplanner.shared.platform.ShareSheet
@@ -75,9 +84,9 @@ import sh.calvin.reorderable.ReorderableItem
 import sh.calvin.reorderable.rememberReorderableLazyListState
 
 /**
- * Trip detail (design §3.1 (3-4)): day tabs filter the map and the stop list to one day; rows
- * reorder by dragging their handle (one fractional-key write on drop, [StopReorder]); the stop
- * sheet moves a stop to another day or removes it.
+ * Trip detail (design §3.1 (3-4)): day tabs filter the map and the event list to one day; rows
+ * reorder by dragging their handle (one fractional-key write on drop, [EventReorder]); the event
+ * sheet moves a event to another day or removes it.
  *
  * Complexity:
  * - **Recomposition Time:** O(S log S) when stops change (days sorted, then flattened) and O(V)
@@ -87,24 +96,30 @@ import sh.calvin.reorderable.rememberReorderableLazyListState
  */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun TripDetailScreen(tripId: String, name: String, focusStopId: String? = null, onOpenActivity: (String) -> Unit, onBack: () -> Unit) {
+fun TripDetailScreen(tripId: String, name: String, focusEventId: String? = null, onOpenActivity: (String) -> Unit, onBack: () -> Unit) {
     val vm: TripDetailViewModel = koinViewModel(key = tripId, parameters = { parametersOf(tripId) })
     val state by vm.state.collectAsStateWithLifecycle()
     val title = state.trip?.name?.takeIf { it.isNotBlank() } ?: name
     var showMenu by remember { mutableStateOf(false) }
-    // Notification deep link (design §10): select the changed stop once it is loaded.
-    LaunchedEffect(focusStopId) { focusStopId?.let(vm::focusStop) }
-    val dayStops = state.stopsForSelectedDay
-    val selected = dayStops.firstOrNull { it.id == state.selectedStopId }
-        ?: state.stopsByDay.values.flatten().firstOrNull { it.id == state.selectedStopId }
-    var showAddStop by remember { mutableStateOf(false) }
+    var showDayHours by remember { mutableStateOf(false) }
+    // Agenda (list) or Day (time grid) - two views of the same computed schedule (design v1.1 §6.6).
+    var dayView by remember { mutableStateOf(false) }
+    val schedule = state.schedule
+    val timed = remember(schedule) { schedule?.events?.associateBy { it.input.id }.orEmpty() }
+    val warningsById = remember(schedule) { schedule?.warnings?.groupBy { it.eventId }.orEmpty() }
+    // Notification deep link (design §10): select the changed event once it is loaded.
+    LaunchedEffect(focusEventId) { focusEventId?.let(vm::focusEvent) }
+    val dayEvents = state.eventsForSelectedDay
+    val selected = dayEvents.firstOrNull { it.id == state.selectedEventId }
+        ?: state.eventsByDay.values.flatten().firstOrNull { it.id == state.selectedEventId }
+    var showAddEvent by remember { mutableStateOf(false) }
     val snackbar = remember { SnackbarHostState() }
 
     // Local copy reordered while dragging; resets whenever the day's stops change remotely.
-    var localStops by remember(dayStops) { mutableStateOf(dayStops) }
+    var localEvents by remember(dayEvents) { mutableStateOf(dayEvents) }
     val listState = rememberLazyListState()
     val reorderable = rememberReorderableLazyListState(listState) { from, to ->
-        localStops = StopReorder.move(localStops, from.key as String, to.key as String)
+        localEvents = EventReorder.move(localEvents, from.key as String, to.key as String)
     }
 
     LaunchedEffect(state.message) {
@@ -144,12 +159,15 @@ fun TripDetailScreen(tripId: String, name: String, focusStopId: String? = null, 
                             text = { Text(if (state.muted) "Unmute notifications" else "Mute notifications") },
                             onClick = { showMenu = false; vm.setMuted(!state.muted) },
                         )
+                        if (state.canEdit) {
+                            DropdownMenuItem(text = { Text("Day hours\u2026") }, onClick = { showMenu = false; showDayHours = true })
+                        }
                     }
                 },
             )
         },
         floatingActionButton = {
-            ExtendedFloatingActionButton(onClick = { showAddStop = true }) { Text("Add stop") }
+            ExtendedFloatingActionButton(onClick = { showAddEvent = true }) { Text("Add event") }
         },
         snackbarHost = { SnackbarHost(snackbar) },
     ) { padding ->
@@ -172,13 +190,36 @@ fun TripDetailScreen(tripId: String, name: String, focusStopId: String? = null, 
                 }
             }
             DayTabs(trip = state.trip, dayCount = state.dayCount, selected = state.selectedDay, onSelect = vm::selectDay)
-            LazyColumn(Modifier.fillMaxSize().testTagCompat("stop_list"), state = listState) {
+            Row(Modifier.padding(horizontal = 16.dp, vertical = 4.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                FilterChip(selected = !dayView, onClick = { dayView = false }, label = { Text("Agenda") })
+                FilterChip(selected = dayView, onClick = { dayView = true }, label = { Text("Day") })
+                schedule?.let { sch ->
+                    Text(
+                        "${Schedule.formatTime(sch.hours.start)} \u2013 ${Schedule.formatTime(sch.hours.end)}" + if (sch.warnings.isNotEmpty()) "  \u00b7 \u26A0 ${sch.warnings.size}" else "",
+                        Modifier.align(Alignment.CenterVertically),
+                        style = MaterialTheme.typography.labelMedium,
+                        color = if (sch.warnings.isNotEmpty()) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                }
+            }
+            if (dayView && schedule != null) {
+                DayView(
+                    schedule = schedule,
+                    selectedId = state.selectedEventId,
+                    canEdit = state.canEdit,
+                    onSelect = vm::selectEvent,
+                    onPin = { id, start -> vm.pinEvent(id, Schedule.formatTime(start), chronologicalOrder(schedule, dayEvents, id, start)) },
+                    onResize = vm::resizeEvent,
+                    modifier = Modifier.fillMaxSize(),
+                )
+            } else
+            LazyColumn(Modifier.fillMaxSize().testTagCompat("event_list"), state = listState) {
                 item(key = "map") {
                     Box(Modifier.fillMaxWidth().height(MAP_HEIGHT)) {
                         MapView(
-                            stops = localStops,
-                            selectedStopId = state.selectedStopId,
-                            onStopTapped = vm::selectStop,
+                            events = localEvents.filter { it.hasStop }, // markers are the stops events contain (design v1.2 §3.1)
+                            selectedEventId = state.selectedEventId,
+                            onStopTapped = vm::selectEvent,
                             modifier = Modifier.fillMaxSize(),
                         )
                         when {
@@ -191,31 +232,41 @@ fun TripDetailScreen(tripId: String, name: String, focusStopId: String? = null, 
                     Text(
                         when {
                             state.loading -> "Loading…"
-                            localStops.isEmpty() -> "No stops on this day — add one"
-                            else -> "${localStops.size} stop${if (localStops.size == 1) "" else "s"} · drag ≡ to reorder"
+                            localEvents.isEmpty() -> "No events on this day — add one"
+                            else -> "${localEvents.size} event${if (localEvents.size == 1) "" else "s"} · drag ≡ to reorder"
                         } + if (state.pendingSync) "  \u00b7 syncing\u2026" else "",
                         Modifier.padding(horizontal = 16.dp, vertical = 12.dp),
                         style = MaterialTheme.typography.titleMedium,
                     )
                 }
-                items(localStops, key = { it.id }) { stop ->
-                    ReorderableItem(reorderable, key = stop.id) { isDragging ->
-                        // Leg from the previous stop in the *local* (possibly mid-drag) order.
-                        val index = localStops.indexOfFirst { it.id == stop.id }
-                        val previous = localStops.getOrNull(index - 1)
-                        Column {
-                        if (previous != null) {
-                            TravelConnector(legs = TravelMode.entries.map { it to state.leg(previous.id, stop.id, it) })
+                items(localEvents, key = { it.id }) { event ->
+                    ReorderableItem(reorderable, key = event.id) { isDragging ->
+                        // Leg from the previous event *with a stop*: the engine's adjacency when the schedule
+                        // is ready, else the local (possibly mid-drag) neighbour.
+                        val index = localEvents.indexOfFirst { it.id == event.id }
+                        val previous = localEvents.take(index).lastOrNull { it.hasStop }
+                        val engineLeg = timed[event.id]?.travelBefore
+                        val pair = when {
+                            !event.hasStop -> null
+                            engineLeg != null -> engineLeg.fromStopId to engineLeg.toStopId
+                            previous != null -> previous.id to event.id
+                            else -> null
                         }
-                        StopRow(
-                            stop = stop,
-                            position = localStops.indexOfFirst { it.id == stop.id } + 1,
-                            selected = stop.id == state.selectedStopId,
+                        Column {
+                        if (pair != null) {
+                            TravelConnector(legs = TravelMode.entries.map { it to state.leg(pair.first, pair.second, it) })
+                        }
+                        EventRow(
+                            event = event,
+                            timed = timed[event.id],
+                            warnings = warningsById[event.id].orEmpty(),
+                            position = localEvents.indexOfFirst { it.id == event.id } + 1,
+                            selected = event.id == state.selectedEventId,
                             dragging = isDragging,
-                            onClick = { vm.selectStop(stop.id) },
+                            onClick = { vm.selectEvent(event.id) },
                             onDropped = {
-                                val (after, before) = StopReorder.neighbours(localStops, stop.id)
-                                vm.moveStop(stop.id, state.selectedDay, after, before)
+                                val (after, before) = EventReorder.neighbours(localEvents, event.id)
+                                vm.moveEvent(event.id, state.selectedDay, after, before)
                             },
                         )
                         }
@@ -226,24 +277,47 @@ fun TripDetailScreen(tripId: String, name: String, focusStopId: String? = null, 
         }
     }
 
-    if (showAddStop) {
-        AddStopSheet(
+    if (showDayHours) {
+        DayHoursDialog(
+            label = dayLabel(state.trip, state.selectedDay),
+            start = schedule?.hours?.start?.let(Schedule::formatTime) ?: state.trip?.defaultDayStart.orEmpty(),
+            end = schedule?.hours?.end?.let(Schedule::formatTime) ?: state.trip?.defaultDayEnd.orEmpty(),
+            onSave = { st, en -> vm.setDayHours(state.selectedDay, st, en); showDayHours = false },
+            onDismiss = { showDayHours = false },
+        )
+    }
+    if (showAddEvent) {
+        AddEventSheet(
             tripId = tripId,
             dayCount = state.dayCount,
-            stopsByDay = state.stopsByDay,
+            eventsByDay = state.eventsByDay,
             initialDay = state.selectedDay,
-            onAdded = { id -> showAddStop = false; vm.selectStop(id) },
-            onDismiss = { showAddStop = false },
+            onAdded = { id -> showAddEvent = false; vm.selectEvent(id) },
+            neighboursAt = { day, hhmm ->
+                val sch = state.scheduleFor(day)
+                val t = Schedule.parseTime(hhmm)
+                if (sch == null || t == null) (state.eventsByDay[day]?.maxOfOrNull { it.order } to null)
+                else {
+                    val events = state.eventsByDay[day].orEmpty()
+                    val orderOf = { id: String -> events.firstOrNull { it.id == id }?.order }
+                    sch.events.lastOrNull { it.start.time <= t }?.input?.id?.let(orderOf) to sch.events.firstOrNull { it.start.time > t }?.input?.id?.let(orderOf)
+                }
+            },
+            onDismiss = { showAddEvent = false },
         )
     } else {
-        selected?.let { stop ->
-            StopSheet(
-                stop = stop,
+        selected?.let { event ->
+            EventSheet(
+                event = event,
                 trip = state.trip,
                 dayCount = state.dayCount,
-                onMoveToDay = { day -> vm.moveToDay(stop.id, day); vm.selectDay(day) },
-                onRemove = { vm.deleteStop(stop.id) },
-                onDismiss = { vm.selectStop(null) },
+                timed = timed[event.id],
+                canEdit = state.canEdit,
+                onPin = { hhmm -> vm.pinEvent(event.id, hhmm, null) },
+                onUnpin = { vm.unpinEvent(event.id) },
+                onMoveToDay = { day -> vm.moveToDay(event.id, day); vm.selectDay(day) },
+                onRemove = { vm.deleteEvent(event.id) },
+                onDismiss = { vm.selectEvent(null) },
             )
         }
     }
@@ -256,7 +330,7 @@ private const val STALE_SYNC_AFTER_MS = 30_000L
 private fun Modifier.testTagCompat(@Suppress("UNUSED_PARAMETER") tag: String): Modifier = this
 
 /**
- * Travel from the previous stop (design §8.3), one entry per mode: the Function's leg when
+ * Travel from the previous event (design §8.3), one entry per mode: the Function's leg when
  * present, a dash when Routes had no answer, and a shimmer while the leg is still being
  * computed - never blocking.
  *
@@ -293,6 +367,52 @@ private fun TravelConnector(legs: List<Pair<TravelMode, TravelLeg?>>) {
 }
 
 /**
+ * Order key that keeps the list chronological after a pin (design v1.1 §6.6): the entry lands
+ * between the entries whose starts bracket the new time, or stays where it is if that is already
+ * the case.
+ *
+ * Complexity:
+ * - **Time:** O(E) over the day's E entries.
+ * - **Space:** O(E).
+ */
+private fun chronologicalOrder(schedule: DaySchedule, events: List<Event>, eventId: String, start: LocalTime): String? {
+    val others = schedule.events.filter { it.input.id != eventId }
+    val before = others.lastOrNull { it.start.time <= start }
+    val after = others.firstOrNull { it.start.time > start }
+    val current = schedule.events.indexOfFirst { it.input.id == eventId }
+    val beforeIdx = before?.let { schedule.events.indexOf(it) } ?: -1
+    if (beforeIdx == current - 1) return null // already in place
+    val orderOf = { id: String -> events.firstOrNull { it.id == id }?.order }
+    return FractionalIndex.between(before?.input?.id?.let(orderOf), after?.input?.id?.let(orderOf))
+}
+
+/**
+ * Per-day start and end (design v1.1 §8.4 step 4).
+ *
+ * Complexity:
+ * - **Recomposition Time:** O(1) per keystroke.
+ * - **Composition Memory:** O(1).
+ */
+@Composable
+private fun DayHoursDialog(label: String, start: String, end: String, onSave: (String, String) -> Unit, onDismiss: () -> Unit) {
+    var s by remember { mutableStateOf(start) }
+    var e by remember { mutableStateOf(end) }
+    val valid = Schedule.parseTime(s) != null && Schedule.parseTime(e) != null
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("Day hours \u00b7 $label") },
+        text = {
+            Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                OutlinedTextField(value = s, onValueChange = { s = it.take(5) }, label = { Text("Start") }, placeholder = { Text("09:00") }, singleLine = true, modifier = Modifier.weight(1f))
+                OutlinedTextField(value = e, onValueChange = { e = it.take(5) }, label = { Text("End") }, placeholder = { Text("21:00") }, singleLine = true, modifier = Modifier.weight(1f))
+            }
+        },
+        confirmButton = { Button(onClick = { onSave(s, e) }, enabled = valid) { Text("Save") } },
+        dismissButton = { TextButton(onClick = onDismiss) { Text("Cancel") } },
+    )
+}
+
+/**
  * Day tabs labelled with the calendar date when the trip document is available.
  *
  * Complexity:
@@ -324,15 +444,17 @@ private fun dayLabel(trip: Trip?, day: Int): String {
 }
 
 /**
- * One stop in the day's list with a drag handle; highlighted when selected, raised while dragging.
+ * One event in the day's list with a drag handle; highlighted when selected, raised while dragging.
  *
  * Complexity:
  * - **Recomposition Time:** O(1).
  * - **Composition Memory:** O(1).
  */
 @Composable
-private fun ReorderableCollectionItemScope.StopRow(
-    stop: Stop,
+private fun ReorderableCollectionItemScope.EventRow(
+    event: Event,
+    timed: TimedEvent?,
+    warnings: List<Warning>,
     position: Int,
     selected: Boolean,
     dragging: Boolean,
@@ -343,8 +465,30 @@ private fun ReorderableCollectionItemScope.StopRow(
         ListItem(
             modifier = Modifier.clickable(onClick = onClick),
             leadingContent = { Text("$position", style = MaterialTheme.typography.titleMedium) },
-            headlineContent = { Text(stop.name) },
-            supportingContent = { Text(stop.address + if (stop.pendingSync) "  \u00b7 syncing\u2026" else "") },
+            headlineContent = { Text(event.title) },
+            supportingContent = {
+                Column {
+                    timed?.let { t ->
+                        Text(
+                            (if (t.pinned) "\uD83D\uDCCC " else "") + Schedule.formatTime(t.start.time) + " \u2013 " + Schedule.formatTime(t.end.time) +
+                                (if (t.gapBeforeMin > 0) "  \u00b7 ${t.gapBeforeMin} min free before" else ""),
+                            style = MaterialTheme.typography.labelMedium,
+                        )
+                    }
+                    event.stop?.let { Text(it.address + if (event.pendingSync) "  \u00b7 syncing\u2026" else "") } ?: if (event.pendingSync) Text("syncing\u2026") else Unit
+                    warnings.forEach { w ->
+                        Text(
+                            when (w) {
+                                is Warning.LateArrival -> "\u26A0 ${w.minutes} min late for the pinned time"
+                                is Warning.Overlap -> "\u26A0 overlaps the previous entry by ${w.minutes} min"
+                                is Warning.DayOverrun -> "\u26A0 runs ${w.minutes} min past the day's end"
+                            },
+                            style = MaterialTheme.typography.labelSmall,
+                            color = MaterialTheme.colorScheme.error,
+                        )
+                    }
+                }
+            },
             trailingContent = {
                 Text(
                     "≡",
@@ -362,7 +506,7 @@ private fun ReorderableCollectionItemScope.StopRow(
 }
 
 /**
- * Stop details over the map: notes (local until Phase 1 persists them), move to another day,
+ * Event details over the map: notes (local until Phase 1 persists them), move to another day,
  * remove.
  *
  * Complexity:
@@ -371,25 +515,50 @@ private fun ReorderableCollectionItemScope.StopRow(
  */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-private fun StopSheet(
-    stop: Stop,
+private fun EventSheet(
+    event: Event,
     trip: Trip?,
     dayCount: Int,
+    timed: TimedEvent?,
+    canEdit: Boolean,
+    onPin: (String) -> Unit,
+    onUnpin: () -> Unit,
     onMoveToDay: (Int) -> Unit,
     onRemove: () -> Unit,
     onDismiss: () -> Unit,
 ) {
     val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
-    var note by remember(stop.id) { mutableStateOf(stop.notes) }
+    var note by remember(event.id) { mutableStateOf(event.notes) }
 
     // Perf signpost from the sheet entering composition until it is fully expanded.
-    LaunchedEffect(stop.id) { snapshotFlow { sheetState.currentValue }.first { it == SheetValue.Expanded } }
+    LaunchedEffect(event.id) { snapshotFlow { sheetState.currentValue }.first { it == SheetValue.Expanded } }
 
     ModalBottomSheet(onDismissRequest = onDismiss, sheetState = sheetState) {
         Column(Modifier.fillMaxWidth().padding(horizontal = 24.dp).imePadding()) {
-            Text(stop.name, style = MaterialTheme.typography.titleLarge)
-            Text(stop.address, style = MaterialTheme.typography.bodyMedium)
-            Text("${dayLabel(trip, stop.day)} · ${stop.durationMin} min", style = MaterialTheme.typography.bodySmall)
+            Text(event.title, style = MaterialTheme.typography.titleLarge)
+            event.stop?.let { Text(it.address, style = MaterialTheme.typography.bodyMedium) }
+            Text(
+                "${dayLabel(trip, event.day)} · ${event.durationMin} min" +
+                    (timed?.let { "  \u00b7 ${Schedule.formatTime(it.start.time)} \u2013 ${Schedule.formatTime(it.end.time)}" } ?: ""),
+                style = MaterialTheme.typography.bodySmall,
+            )
+            if (canEdit) {
+                Spacer(Modifier.height(8.dp))
+                var pinText by remember(event.id, event.fixedStart) { mutableStateOf(event.fixedStart ?: timed?.let { Schedule.formatTime(it.start.time) } ?: "") }
+                Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    OutlinedTextField(
+                        value = pinText,
+                        onValueChange = { pinText = it.take(5) },
+                        label = { Text(if (event.fixedStart != null) "Pinned at" else "Pin to time") },
+                        placeholder = { Text("HH:mm") },
+                        singleLine = true,
+                        isError = pinText.isNotBlank() && Schedule.parseTime(pinText) == null,
+                        modifier = Modifier.width(140.dp),
+                    )
+                    TextButton(onClick = { onPin(pinText) }, enabled = Schedule.parseTime(pinText) != null && pinText != event.fixedStart) { Text("Pin") }
+                    if (event.fixedStart != null) TextButton(onClick = onUnpin) { Text("Unpin") }
+                }
+            }
             Spacer(Modifier.height(16.dp))
             OutlinedTextField(
                 value = note,
@@ -404,8 +573,8 @@ private fun StopSheet(
                 Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                     repeat(dayCount) { day ->
                         FilterChip(
-                            selected = day == stop.day,
-                            enabled = day != stop.day,
+                            selected = day == event.day,
+                            enabled = day != event.day,
                             onClick = { onMoveToDay(day) },
                             label = { Text("Day ${day + 1}") },
                         )
@@ -413,7 +582,7 @@ private fun StopSheet(
                 }
             }
             Spacer(Modifier.height(8.dp))
-            TextButton(onClick = onRemove) { Text("Remove stop", color = MaterialTheme.colorScheme.error) }
+            TextButton(onClick = onRemove) { Text("Remove event", color = MaterialTheme.colorScheme.error) }
             Spacer(Modifier.height(24.dp))
         }
     }

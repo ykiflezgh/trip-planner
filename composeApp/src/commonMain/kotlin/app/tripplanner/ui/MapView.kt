@@ -2,7 +2,7 @@ package app.tripplanner.ui
 
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
-import app.tripplanner.shared.core.model.Stop
+import app.tripplanner.shared.core.model.Event
 
 /**
  * Platform map (design SS6.4): Maps Compose on Android; GMSMapView hosted from
@@ -11,8 +11,8 @@ import app.tripplanner.shared.core.model.Stop
  */
 @Composable
 expect fun MapView(
-    stops: List<Stop>,
-    selectedStopId: String?,
+    events: List<Event>,
+    selectedEventId: String?,
     onStopTapped: (String) -> Unit,
     modifier: Modifier = Modifier,
 )

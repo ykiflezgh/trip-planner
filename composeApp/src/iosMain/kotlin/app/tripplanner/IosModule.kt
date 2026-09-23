@@ -69,13 +69,13 @@ fun initKoin(placesApiKey: String, googleSignIn: GoogleSignInBridge, push: PushB
 fun offerInviteUrl(url: String): Boolean = KoinPlatform.getKoin().get<DeepLinkIntake>().offer(url)
 
 /**
- * Notification tap (design §10): the APNs payload carries the trip and stop ids.
+ * Notification tap (design §10): the APNs payload carries the trip and event ids.
  *
  * Complexity:
  * - **Time:** O(1).
  * - **Space:** O(1).
  */
-fun offerTripLink(tripId: String, stopId: String?): Boolean = KoinPlatform.getKoin().get<DeepLinkIntake>().offerTrip(tripId, stopId)
+fun offerTripLink(tripId: String, eventId: String?): Boolean = KoinPlatform.getKoin().get<DeepLinkIntake>().offerTrip(tripId, eventId)
 
 /**
  * FCM token from `MessagingDelegate` (design §6.4); `null` when Firebase Messaging drops it.

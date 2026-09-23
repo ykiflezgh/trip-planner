@@ -38,13 +38,13 @@ class MainActivity : ComponentActivity() {
 
     /**
      * App Link `https://<host>/join/{code}` (design §8.2) or a notification tap carrying the
-     * trip/stop ids (design §10); anything else is ignored.
+     * trip/event ids (design §10); anything else is ignored.
      */
     private fun offerDeepLink(intent: Intent?) {
         if (intent == null) return
         val tripId = intent.getStringExtra(TripMessagingService.EXTRA_TRIP_ID)
         if (tripId != null) {
-            intake.offerTrip(tripId, intent.getStringExtra(TripMessagingService.EXTRA_STOP_ID))
+            intake.offerTrip(tripId, intent.getStringExtra(TripMessagingService.EXTRA_EVENT_ID))
             intent.removeExtra(TripMessagingService.EXTRA_TRIP_ID) // consume: a config change must not re-fire it
             return
         }

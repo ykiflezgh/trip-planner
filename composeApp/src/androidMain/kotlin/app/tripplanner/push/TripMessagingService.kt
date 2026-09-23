@@ -52,7 +52,7 @@ class TripMessagingService : FirebaseMessagingService() {
         val open = Intent(this, MainActivity::class.java).apply {
             action = ACTION_OPEN_TRIP
             putExtra(EXTRA_TRIP_ID, payload.tripId)
-            payload.stopId?.let { putExtra(EXTRA_STOP_ID, it) }
+            payload.eventId?.let { putExtra(EXTRA_EVENT_ID, it) }
             // singleTop activity: a running instance gets onNewIntent, otherwise a fresh launch.
             flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_SINGLE_TOP or Intent.FLAG_ACTIVITY_CLEAR_TOP
         }
@@ -78,7 +78,7 @@ class TripMessagingService : FirebaseMessagingService() {
         const val CHANNEL_ID = "trip_changes"
         const val ACTION_OPEN_TRIP = "app.tripplanner.OPEN_TRIP"
         const val EXTRA_TRIP_ID = "tripId"
-        const val EXTRA_STOP_ID = "stopId"
+        const val EXTRA_EVENT_ID = "eventId"
 
         /**
          * Complexity:
@@ -89,7 +89,7 @@ class TripMessagingService : FirebaseMessagingService() {
             val nm = context.getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
             nm.createNotificationChannel(
                 NotificationChannel(CHANNEL_ID, "Trip changes", NotificationManager.IMPORTANCE_DEFAULT).apply {
-                    description = "Stops added, moved or removed by other members"
+                    description = "Events added, moved, pinned or removed by other members"
                 },
             )
         }

@@ -1,6 +1,6 @@
-package app.tripplanner.shared.feature.stops
+package app.tripplanner.shared.feature.events
 
-import app.tripplanner.shared.core.model.Stop
+import app.tripplanner.shared.core.model.Event
 import app.tripplanner.shared.core.util.FractionalIndex
 import kotlin.uuid.ExperimentalUuidApi
 import kotlin.uuid.Uuid
@@ -31,9 +31,9 @@ object PlacesSearch {
      * Order key that places a new stop after the last stop of a day.
      *
      * Complexity:
-     * - **Time:** O(S) to find the maximal key among the day's S stops, plus O(L) key generation.
+     * - **Time:** O(S) to find the maximal key among the day's S events, plus O(L) key generation.
      * - **Space:** O(L) for the new key.
      */
-    fun appendOrderKey(stopsOfDay: List<Stop>): String =
+    fun appendOrderKey(stopsOfDay: List<Event>): String =
         FractionalIndex.between(stopsOfDay.maxOfOrNull { it.order }?.ifEmpty { null }, null)
 }

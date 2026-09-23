@@ -37,22 +37,28 @@ export function collapseKey(tripId: string, actorId: string): string {
  */
 export function iosAlert(n: Notice): { "loc-key": string; "loc-args": string[] } {
   const who = n.actorName || "Someone";
-  const stop = n.facts.stopName || "a stop";
+  const stop = n.facts.title || "an event";
   const day = String(n.facts.day + 1);
   if (n.kind === "digest") return { "loc-key": "notif_digest", "loc-args": [who, String(n.count)] };
   switch (n.facts.type) {
-    case "stop_added":
-      return { "loc-key": "notif_stop_added", "loc-args": [who, stop, day] };
-    case "stop_removed":
-      return { "loc-key": "notif_stop_removed", "loc-args": [who, stop, day] };
-    case "stop_moved":
+    case "event_added":
+      return { "loc-key": "notif_event_added", "loc-args": [who, stop, day] };
+    case "event_removed":
+      return { "loc-key": "notif_event_removed", "loc-args": [who, stop, day] };
+    case "event_moved":
       return n.facts.fromDay !== undefined && n.facts.fromDay !== n.facts.day
-        ? { "loc-key": "notif_stop_moved_day", "loc-args": [who, stop, String(n.facts.fromDay + 1), day] }
-        : { "loc-key": "notif_stop_reordered", "loc-args": [who, stop, day] };
-    case "stop_edited":
-      return { "loc-key": "notif_stop_edited", "loc-args": [who, stop] };
+        ? { "loc-key": "notif_event_moved_day", "loc-args": [who, stop, String(n.facts.fromDay + 1), day] }
+        : { "loc-key": "notif_event_reordered", "loc-args": [who, stop, day] };
+    case "event_edited":
+      return { "loc-key": "notif_event_edited", "loc-args": [who, stop] };
     case "member_joined":
       return { "loc-key": "notif_member_joined", "loc-args": [who] };
+    case "event_pinned":
+      return { "loc-key": "notif_event_pinned", "loc-args": [who, stop, n.facts.fixedStart ?? "", day] };
+    case "event_unpinned":
+      return { "loc-key": "notif_event_unpinned", "loc-args": [who, stop] };
+    case "event_resized":
+      return { "loc-key": "notif_event_resized", "loc-args": [who, stop] };
     default:
       return { "loc-key": "notif_generic", "loc-args": [who] };
   }
@@ -74,12 +80,13 @@ export function buildMessage(n: Notice, tokens: string[]): MulticastMessage {
     actorId: n.actorId,
     actorName: n.actorName,
     type: n.facts.type,
-    stopId: n.facts.stopId ?? "",
-    stopName: n.facts.stopName,
+    eventId: n.facts.eventId ?? "",
+    title: n.facts.title,
     day: String(n.facts.day),
     count: String(n.count),
   };
   if (n.facts.fromDay !== undefined) data.fromDay = String(n.facts.fromDay);
+  if (n.facts.fixedStart) data.fixedStart = n.facts.fixedStart;
   return {
     tokens,
     data,

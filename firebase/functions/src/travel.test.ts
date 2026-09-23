@@ -16,7 +16,7 @@ test("moving one stop recomputes only new adjacencies and drops the old one", ()
   const existing = new Map<string, LegDoc>();
   for (const [f, t] of [["a", "b"], ["b", "c"], ["c", "d"]] as const) {
     for (const mode of ["DRIVE", "WALK"] as const) {
-      existing.set(legId(f, t, mode), { fromStopId: f, toStopId: t, mode, seconds: 60, meters: 500, computedAt: now - 1000 });
+      existing.set(legId(f, t, mode), { fromEventId: f, toEventId: t, mode, seconds: 60, meters: 500, computedAt: now - 1000 });
     }
   }
   const plan = planLegs(adjacentPairs([A, B, D, C]), new Set(["c"]), existing, now);
@@ -30,9 +30,9 @@ test("moving one stop recomputes only new adjacencies and drops the old one", ()
 test("stale and failed legs are recomputed; other days' legs are left alone", () => {
   const now = 5_000_000;
   const existing = new Map<string, LegDoc>([
-    ["a_b_DRIVE", { fromStopId: "a", toStopId: "b", mode: "DRIVE", seconds: 1, meters: 1, computedAt: now - CACHE_MS - 1 }],
-    ["a_b_WALK", { fromStopId: "a", toStopId: "b", mode: "WALK", error: "boom", computedAt: now }],
-    ["x_y_DRIVE", { fromStopId: "x", toStopId: "y", mode: "DRIVE", seconds: 1, meters: 1, computedAt: now }],
+    ["a_b_DRIVE", { fromEventId: "a", toEventId: "b", mode: "DRIVE", seconds: 1, meters: 1, computedAt: now - CACHE_MS - 1 }],
+    ["a_b_WALK", { fromEventId: "a", toEventId: "b", mode: "WALK", error: "boom", computedAt: now }],
+    ["x_y_DRIVE", { fromEventId: "x", toEventId: "y", mode: "DRIVE", seconds: 1, meters: 1, computedAt: now }],
   ]);
   const plan = planLegs(adjacentPairs([A, B]), new Set(["b"]), existing, now);
   assert.equal(plan.toCompute.DRIVE.length, 1);
@@ -47,7 +47,7 @@ test("matrix diagonal becomes legs; failures become error legs", () => {
     { originIndex: 0, destinationIndex: 1, condition: "ROUTE_EXISTS", duration: "9s", distanceMeters: 1 },
     { originIndex: 1, destinationIndex: 1, condition: "ROUTE_NOT_FOUND" },
   ], 42);
-  assert.deepEqual(legs[0], { fromStopId: "a", toStopId: "b", mode: "DRIVE", computedAt: 42, seconds: 754, meters: 4210 });
+  assert.deepEqual(legs[0], { fromEventId: "a", toEventId: "b", mode: "DRIVE", computedAt: 42, seconds: 754, meters: 4210 });
   assert.equal(legs[1].error, "ROUTE_NOT_FOUND");
   const req = matrixRequest(pairs, "DRIVE");
   assert.equal((req.origins as unknown[]).length, 2);

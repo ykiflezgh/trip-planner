@@ -1,6 +1,8 @@
 package app.tripplanner.ui
 
 import androidx.compose.foundation.clickable
+import app.tripplanner.schedule.Schedule
+import androidx.compose.material3.Button
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -33,15 +35,15 @@ import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
-import app.tripplanner.shared.core.model.Stop
-import app.tripplanner.shared.feature.stops.AddStopViewModel
-import app.tripplanner.shared.feature.stops.PlacesSearch
+import app.tripplanner.shared.core.model.Event
+import app.tripplanner.shared.feature.events.AddEventViewModel
+import app.tripplanner.shared.feature.events.PlacesSearch
 import org.koin.compose.viewmodel.koinViewModel
 import org.koin.core.parameter.parametersOf
 
 /**
  * Places search sheet (design §8.1): pick a day, type >= 3 characters, tap a suggestion.
- * The stop lands at the end of the chosen day and the sheet reports its id through [onAdded].
+ * The event lands at the end of the chosen day and the sheet reports its id through [onAdded].
  *
  * Complexity:
  * - **Recomposition Time:** O(D + V) per state change, for D day chips and V visible
@@ -50,23 +52,25 @@ import org.koin.core.parameter.parametersOf
  */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun AddStopSheet(
+fun AddEventSheet(
     tripId: String,
     dayCount: Int,
-    stopsByDay: Map<Int, List<Stop>>,
+    eventsByDay: Map<Int, List<Event>>,
     initialDay: Int,
     onAdded: (stopId: String) -> Unit,
+    /** Where a pinned custom entry belongs in the day's order: (afterOrder, beforeOrder) around its time (design v1.1 §6.6). */
+    neighboursAt: (day: Int, hhmm: String) -> Pair<String?, String?> = { d, _ -> eventsByDay[d]?.maxOfOrNull { it.order } to null },
     onDismiss: () -> Unit,
 ) {
-    val vm: AddStopViewModel = koinViewModel(key = "add-stop-$tripId", parameters = { parametersOf(tripId) })
+    val vm: AddEventViewModel = koinViewModel(key = "add-stop-$tripId", parameters = { parametersOf(tripId) })
     val state by vm.state.collectAsStateWithLifecycle()
     val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
     var day by remember { mutableStateOf(initialDay.coerceIn(0, (dayCount - 1).coerceAtLeast(0))) }
     val focus = remember { FocusRequester() }
 
     LaunchedEffect(Unit) { focus.requestFocus() }
-    LaunchedEffect(state.addedStopId) {
-        state.addedStopId?.let { id ->
+    LaunchedEffect(state.addedEventId) {
+        state.addedEventId?.let { id ->
             vm.consumeAdded()
             onAdded(id)
         }
@@ -74,7 +78,7 @@ fun AddStopSheet(
 
     ModalBottomSheet(onDismissRequest = onDismiss, sheetState = sheetState) {
         Column(Modifier.fillMaxWidth().fillMaxHeight(0.9f).padding(horizontal = 16.dp).imePadding()) {
-            Text("Add a stop", style = MaterialTheme.typography.titleLarge)
+            Text("Add an event", style = MaterialTheme.typography.titleLarge)
             Spacer(Modifier.height(8.dp))
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 repeat(dayCount) { index ->
@@ -82,6 +86,34 @@ fun AddStopSheet(
                 }
             }
             Spacer(Modifier.height(8.dp))
+            // An event containing a stop (from Places), or a plain event with no place (design v1.2 §3.1 item 3).
+            var custom by remember { mutableStateOf(false) }
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                FilterChip(selected = !custom, onClick = { custom = false }, label = { Text("Place") })
+                FilterChip(selected = custom, onClick = { custom = true }, label = { Text("No place") })
+            }
+            Spacer(Modifier.height(8.dp))
+            if (custom) {
+                var name by remember { mutableStateOf("") }
+                var duration by remember { mutableStateOf("60") }
+                var at by remember { mutableStateOf("") }
+                OutlinedTextField(value = name, onValueChange = { name = it }, label = { Text("Title") }, placeholder = { Text("Flight to Rome, free time, check-in\u2026") }, singleLine = true, modifier = Modifier.fillMaxWidth())
+                Spacer(Modifier.height(8.dp))
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    OutlinedTextField(value = duration, onValueChange = { duration = it.filter(Char::isDigit).take(4) }, label = { Text("Minutes") }, singleLine = true, modifier = Modifier.weight(1f))
+                    OutlinedTextField(value = at, onValueChange = { at = it.take(5) }, label = { Text("Pin at (optional)") }, placeholder = { Text("HH:mm") }, singleLine = true, isError = at.isNotBlank() && Schedule.parseTime(at) == null, modifier = Modifier.weight(1f))
+                }
+                Spacer(Modifier.height(12.dp))
+                Button(
+                    onClick = {
+                        val pinned = at.takeIf { Schedule.parseTime(it) != null }
+                        val (afterOrder, beforeOrder) = if (pinned != null) neighboursAt(day, pinned) else (eventsByDay[day]?.maxOfOrNull { it.order } to null)
+                        vm.addPlain(name, duration.toIntOrNull() ?: 60, day, afterOrder, pinned, beforeOrder)
+                    },
+                    enabled = name.isNotBlank() && (at.isBlank() || Schedule.parseTime(at) != null),
+                ) { Text("Add event") }
+                return@Column
+            }
             OutlinedTextField(
                 value = state.query,
                 onValueChange = vm::setQuery,
@@ -112,8 +144,8 @@ fun AddStopSheet(
                 items(state.suggestions, key = { it.placeId }) { suggestion ->
                     ListItem(
                         modifier = Modifier.clickable(enabled = !state.adding) {
-                            val afterOrder = stopsByDay[day]?.maxOfOrNull { it.order }
-                            vm.add(suggestion, day, afterOrder)
+                            val afterOrder = eventsByDay[day]?.maxOfOrNull { it.order }
+                            vm.addPlace(suggestion, day, afterOrder)
                         },
                         headlineContent = { Text(suggestion.primaryText) },
                         supportingContent = { if (suggestion.secondaryText.isNotBlank()) Text(suggestion.secondaryText) },

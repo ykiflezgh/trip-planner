@@ -2,7 +2,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import { IMMEDIATE_LIMIT, WINDOW_MS, needsDigest, planNotification, tokensToPrune, type BurstWindow, type EventFacts } from "./burst";
 
-const ev = (n: number): EventFacts => ({ type: "stop_moved", stopId: `s${n}`, stopName: `Stop ${n}`, day: 0 });
+const ev = (n: number): EventFacts => ({ type: "event_moved", eventId: `e${n}`, title: `Event ${n}`, day: 0 });
 
 test("first event opens a window and is pushed at once", () => {
   const d = planNotification(undefined, 1_000, ev(1));
@@ -24,7 +24,7 @@ test("three rapid edits: two singles, then a deferred digest scheduled once", ()
   assert.deepEqual(actions, ["send_single", "send_single", "defer", "defer", "defer"]);
   assert.deepEqual(flushes, [false, false, true, false, false]);
   assert.equal(w!.count, 5);
-  assert.equal(w!.latest.stopId, "s5");
+  assert.equal(w!.latest.eventId, "e5");
   assert.equal(needsDigest(w!), true);
   assert.equal(IMMEDIATE_LIMIT, 2);
 });

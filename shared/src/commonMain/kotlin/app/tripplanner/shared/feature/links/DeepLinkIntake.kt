@@ -8,8 +8,8 @@ import kotlinx.coroutines.flow.StateFlow
 sealed interface DeepLink {
     /** Invite link or pasted code (design §8.2). */
     data class Join(val code: String) : DeepLink
-    /** Notification tap (design §10): open the trip and, when known, select the stop. */
-    data class OpenTrip(val tripId: String, val stopId: String? = null) : DeepLink
+    /** Notification tap (design §10): open the trip and, when known, select the event. */
+    data class OpenTrip(val tripId: String, val eventId: String? = null) : DeepLink
 }
 
 /**
@@ -39,9 +39,9 @@ class DeepLinkIntake {
      * - **Time:** O(1).
      * - **Space:** O(1).
      */
-    fun offerTrip(tripId: String, stopId: String?): Boolean {
+    fun offerTrip(tripId: String, eventId: String?): Boolean {
         if (tripId.isBlank()) return false
-        _pending.value = DeepLink.OpenTrip(tripId, stopId?.takeIf { it.isNotBlank() })
+        _pending.value = DeepLink.OpenTrip(tripId, eventId?.takeIf { it.isNotBlank() })
         return true
     }
 

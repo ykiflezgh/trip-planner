@@ -1,6 +1,6 @@
-package app.tripplanner.shared.feature.stops
+package app.tripplanner.shared.feature.events
 
-import app.tripplanner.shared.core.model.Stop
+import app.tripplanner.shared.core.model.Event
 import app.tripplanner.shared.core.util.FractionalIndex
 import kotlin.random.Random
 import kotlin.test.Test
@@ -8,25 +8,25 @@ import kotlin.test.assertEquals
 import kotlin.test.assertNull
 import kotlin.test.assertTrue
 
-class StopReorderTest {
-    private fun stops(n: Int) = FractionalIndex.spread(n).mapIndexed { i, k -> Stop(id = "s$i", order = k) }
+class EventReorderTest {
+    private fun events(n: Int) = FractionalIndex.spread(n).mapIndexed { i, k -> Event(id = "s$i", order = k) }
 
     @Test
     fun moveDownAndUp() {
-        val list = stops(4)
-        assertEquals(listOf("s1", "s2", "s0", "s3"), StopReorder.move(list, "s0", "s2").map { it.id })
-        assertEquals(listOf("s3", "s0", "s1", "s2"), StopReorder.move(list, "s3", "s0").map { it.id })
-        assertEquals(list, StopReorder.move(list, "s1", "s1"))
-        assertEquals(list, StopReorder.move(list, "missing", "s1"))
+        val list = events(4)
+        assertEquals(listOf("s1", "s2", "s0", "s3"), EventReorder.move(list, "s0", "s2").map { it.id })
+        assertEquals(listOf("s3", "s0", "s1", "s2"), EventReorder.move(list, "s3", "s0").map { it.id })
+        assertEquals(list, EventReorder.move(list, "s1", "s1"))
+        assertEquals(list, EventReorder.move(list, "missing", "s1"))
     }
 
     @Test
     fun neighboursAtEdgesAreNull() {
-        val list = stops(3)
-        assertEquals(null to list[1].order, StopReorder.neighbours(list, "s0"))
-        assertEquals(list[0].order to list[2].order, StopReorder.neighbours(list, "s1"))
-        assertEquals(list[1].order to null, StopReorder.neighbours(list, "s2"))
-        assertNull(StopReorder.neighbours(listOf(list[0]), "s0").first)
+        val list = events(3)
+        assertEquals(null to list[1].order, EventReorder.neighbours(list, "s0"))
+        assertEquals(list[0].order to list[2].order, EventReorder.neighbours(list, "s1"))
+        assertEquals(list[1].order to null, EventReorder.neighbours(list, "s2"))
+        assertNull(EventReorder.neighbours(listOf(list[0]), "s0").first)
     }
 
     /**
@@ -37,13 +37,13 @@ class StopReorderTest {
     @Test
     fun soak500RandomMovesKeepKeysStrictlyOrdered() {
         val rnd = Random(42)
-        var list = stops(12)
+        var list = events(12)
         var maxLen = 0
         repeat(500) {
             val from = list[rnd.nextInt(list.size)].id
             val to = list[rnd.nextInt(list.size)].id
-            list = StopReorder.move(list, from, to)
-            val (after, before) = StopReorder.neighbours(list, from)
+            list = EventReorder.move(list, from, to)
+            val (after, before) = EventReorder.neighbours(list, from)
             val key = FractionalIndex.between(after, before)
             list = list.map { if (it.id == from) it.copy(order = key) else it }
             maxLen = maxOf(maxLen, key.length)

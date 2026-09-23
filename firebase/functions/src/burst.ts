@@ -14,13 +14,16 @@ export const WINDOW_MS = 60_000;
 /** Events pushed individually before a window turns into a digest. */
 export const IMMEDIATE_LIMIT = 2;
 
-/** What the client needs to word one event; mirrors PushKeys in shared/. */
+/** What the client needs to word one activity event; mirrors PushKeys in shared/. */
 export interface EventFacts {
   type: string;
-  stopId?: string;
-  stopName: string;
+  /** The trip event this activity is about (design v1.2: events, which may contain stops). */
+  eventId?: string;
+  title: string;
   day: number;
   fromDay?: number;
+  /** Pinned "HH:mm" for entry_pinned events (design v1.1 §8.4). */
+  fixedStart?: string;
 }
 
 export interface BurstWindow {

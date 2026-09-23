@@ -55,8 +55,8 @@ final class AppDelegate: NSObject, UIApplicationDelegate, UNUserNotificationCent
                                 withCompletionHandler completionHandler: @escaping () -> Void) {
         let info = response.notification.request.content.userInfo
         if let tripId = info["tripId"] as? String, !tripId.isEmpty {
-            let stopId = (info["stopId"] as? String).flatMap { $0.isEmpty ? nil : $0 }
-            _ = IosModuleKt.offerTripLink(tripId: tripId, stopId: stopId)
+            let eventId = (info["eventId"] as? String).flatMap { $0.isEmpty ? nil : $0 }
+            _ = IosModuleKt.offerTripLink(tripId: tripId, eventId: eventId)
         }
         completionHandler()
     }

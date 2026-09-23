@@ -10,7 +10,7 @@ import { onTaskDispatched } from "firebase-functions/v2/tasks";
 import { defineBoolean, defineSecret } from "firebase-functions/params";
 import { logger } from "firebase-functions/v2";
 import { initializeApp } from "firebase-admin/app";
-import { FieldValue, getFirestore, type DocumentReference } from "firebase-admin/firestore";
+import { FieldValue, GeoPoint, getFirestore, type DocumentReference } from "firebase-admin/firestore";
 import { getMessaging } from "firebase-admin/messaging";
 import { getFunctions } from "firebase-admin/functions";
 import * as crypto from "node:crypto";
@@ -103,8 +103,8 @@ export const redeemInvite = onCall(async (req) => {
       type: "member_joined",
       actorId: uid,
       actorName: await displayName(uid),
-      stopId: null,
-      stopName: "",
+      eventId: null,
+      title: "",
       day: 0,
       summary: "member joined",
       createdAt: FieldValue.serverTimestamp(),
@@ -127,100 +127,114 @@ async function displayName(uid: string): Promise<string> {
 }
 
 /** Fields whose change alone is not a user-visible edit. */
-const BOOKKEEPING_FIELDS = new Set(["updatedAt", "updatedBy", "placeFetchedAt", "addedAt"]);
+const BOOKKEEPING_FIELDS = new Set(["updatedAt", "updatedBy", "addedAt", "stop"]);
 
 /**
- * Classifies a stop write. `null` when nothing a member would care about changed.
+ * Classifies an event write (design v1.2 §7: `trips/{id}/events`, each may contain a stop).
+ * `null` when nothing a member would care about changed.
  *
  * Complexity:
  * - Time: O(F) over the F fields of the document.
  * - Space: O(F).
  */
-export function classifyStopWrite(before: DocumentSnapshot | undefined, after: DocumentSnapshot | undefined): EventFacts | null {
+export function classifyEventWrite(before: DocumentSnapshot | undefined, after: DocumentSnapshot | undefined): EventFacts | null {
   const b = before?.exists ? before.data() ?? {} : undefined;
   const a = after?.exists ? after.data() ?? {} : undefined;
-  const stopName = String(a?.name ?? b?.name ?? "");
-  if (!b && a) return { type: "stop_added", stopName, day: Number(a.day ?? 0) };
-  if (b && !a) return { type: "stop_removed", stopName, day: Number(b.day ?? 0) };
+  const title = String(a?.title ?? b?.title ?? "");
+  if (!b && a) return { type: "event_added", title, day: Number(a.day ?? 0) };
+  if (b && !a) return { type: "event_removed", title, day: Number(b.day ?? 0) };
   if (!b || !a) return null;
+  const pinChanged = (a.fixedStart ?? null) !== (b.fixedStart ?? null);
   if (a.day !== b.day || a.order !== b.order) {
-    return { type: "stop_moved", stopName, day: Number(a.day ?? 0), fromDay: Number(b.day ?? 0) };
+    // A pin that also reorders (design v1.2 §8.4 step 2) reads as "moved to 14:00", not "reordered".
+    if (pinChanged && a.fixedStart) return { type: "event_pinned", title, day: Number(a.day ?? 0), fixedStart: String(a.fixedStart) };
+    return { type: "event_moved", title, day: Number(a.day ?? 0), fromDay: Number(b.day ?? 0) };
   }
-  const changed = new Set([...Object.keys(a), ...Object.keys(b)]).values();
-  for (const f of changed) {
+  if (pinChanged) return a.fixedStart ? { type: "event_pinned", title, day: Number(a.day ?? 0), fixedStart: String(a.fixedStart) } : { type: "event_unpinned", title, day: Number(a.day ?? 0) };
+  if (a.durationMin !== b.durationMin) return { type: "event_resized", title, day: Number(a.day ?? 0) };
+  // The embedded stop only matters when its place changes (a Places refresh of name/address does not).
+  if ((a.stop?.placeId ?? null) !== (b.stop?.placeId ?? null)) return { type: "event_edited", title, day: Number(a.day ?? 0) };
+  for (const f of new Set([...Object.keys(a), ...Object.keys(b)])) {
     if (BOOKKEEPING_FIELDS.has(f)) continue;
-    if (JSON.stringify(a[f]) !== JSON.stringify(b[f])) return { type: "stop_edited", stopName, day: Number(a.day ?? 0) };
+    if (JSON.stringify(a[f]) !== JSON.stringify(b[f])) return { type: "event_edited", title, day: Number(a.day ?? 0) };
   }
   return null;
 }
 
 /**
- * §8.1 + §8.3 — activity event per stop write; the fan-out runs on the event (§10).
+ * §8.1 + §8.3 — activity event per trip-event write; the fan-out runs on the activity (§10).
  * The actor comes from the write's auth context (a Firebase Auth user's client-SDK write
- * arrives as authType "api_key" with the uid in authId - observed on the dev project; "unknown"
- * is accepted too); Admin/system writes fall back to the document's updatedBy/addedBy so the
- * feed still names someone.
+ * arrives as authType "api_key" with the uid in authId; "unknown" is accepted too); Admin/system
+ * writes fall back to the document's updatedBy/addedBy so the feed still names someone.
  *
  * Complexity:
  * - Time: O(F) to diff the F fields + two document reads + one write.
  * - Space: O(F).
  */
-export const onStopWritten = onDocumentWrittenWithAuthContext(
-  { document: "trips/{tripId}/stops/{stopId}", secrets: [ROUTES_API_KEY] },
+export const onEventWritten = onDocumentWrittenWithAuthContext(
+  { document: "trips/{tripId}/events/{eventId}", secrets: [ROUTES_API_KEY] },
   async (event) => {
-    const { tripId, stopId } = event.params;
+    const { tripId, eventId } = event.params;
     const before = event.data?.before;
     const after = event.data?.after;
-    const facts = classifyStopWrite(before, after);
+    const facts = classifyEventWrite(before, after);
     if (!facts) return;
-    facts.stopId = stopId;
+    facts.eventId = eventId;
 
     const fromDoc = String(after?.get("updatedBy") || after?.get("addedBy") || before?.get("updatedBy") || before?.get("addedBy") || "");
     const userWrite = event.authType === "api_key" || event.authType === "unknown";
     const actorId = userWrite && event.authId ? event.authId : fromDoc;
-    logger.debug("stop write", { tripId, stopId, type: facts.type, authType: event.authType, authId: event.authId, actorId });
+    logger.debug("event write", { tripId, eventId, type: facts.type, authType: event.authType, authId: event.authId, actorId });
 
-    // 1. Activity event (feed + fan-out source, design §7)
-    const day = facts.day;
+    // 1. Activity (feed + fan-out source, design §7)
     await db.collection(`trips/${tripId}/activity`).add({
       type: facts.type,
       actorId,
       actorName: await displayName(actorId),
-      stopId,
-      stopName: facts.stopName,
-      day,
+      eventId,
+      title: facts.title,
+      day: facts.day,
       fromDay: facts.fromDay ?? null,
-      summary: `${facts.type.replace("_", " ")}: ${facts.stopName} (day ${day + 1})`,
+      fixedStart: facts.fixedStart ?? null,
+      summary: `${facts.type.replace("_", " ")}: ${facts.title} (day ${facts.day + 1})`,
       createdAt: FieldValue.serverTimestamp(),
     });
 
-    // 2. Travel-time recompute for affected adjacencies (§8.3)
-    if (facts.type !== "stop_edited") {
+    // 2. Travel-time recompute for affected adjacencies (§8.3): only when a stop-bearing event is
+    // added, moved or removed, or its place changes. Pins and resizes call no Routes API.
+    const hadStop = !!before?.get("stop")?.placeId;
+    const hasStop = !!after?.get("stop")?.placeId;
+    const structural = facts.type === "event_added" || facts.type === "event_removed" || facts.type === "event_moved" ||
+      (facts.type === "event_edited" && (after?.get("stop")?.placeId ?? null) !== (before?.get("stop")?.placeId ?? null));
+    if (structural && (hadStop || hasStop)) {
       const days = new Set<number>([facts.day]);
       if (facts.fromDay !== undefined) days.add(facts.fromDay);
-      await recomputeTravel(tripId, stopId, [...days]);
+      await recomputeTravel(tripId, eventId, [...days]);
     }
   },
 );
 
 /**
- * §8.3 — legs for the affected days: current adjacencies vs. stored legs, then at most one
- * Routes call per mode (two per stop change, design §15 asks for fewer than five). Legs whose
- * adjacency disappeared are deleted; fresh ones (< 24 h) are kept.
+ * §8.3 — legs for the affected days: current adjacencies between stop-bearing events vs. stored
+ * legs, then at most one Routes call per mode (two per change, design §15 asks for fewer than
+ * five). Legs whose adjacency disappeared are deleted; fresh ones (< 24 h) are kept.
  *
  * Complexity:
- * - Time: O(S log S + L) to order the S stops of the affected days and scan L stored legs,
+ * - Time: O(E log E + L) to order the E events of the affected days and scan L stored legs,
  *   plus O(P^2) billed matrix elements for the P pairs to compute (P <= 3 per change).
- * - Space: O(S + L).
+ * - Space: O(E + L).
  */
-async function recomputeTravel(tripId: string, changedStopId: string, days: number[]): Promise<void> {
-  const stopsSnap = await db.collection(`trips/${tripId}/stops`).where("day", "in", days).get();
+async function recomputeTravel(tripId: string, changedEventId: string, days: number[]): Promise<void> {
+  const eventsSnap = await db.collection(`trips/${tripId}/events`).where("day", "in", days).get();
   const byDay = new Map<number, StopPoint[]>();
-  const affected = new Set<string>([changedStopId]);
+  const affected = new Set<string>([changedEventId]);
   // Fractional-index keys sort by plain code-point order (core/util/FractionalIndex), not locale order.
   const byOrder = (a: string, b: string) => (a < b ? -1 : a > b ? 1 : 0);
-  for (const d of stopsSnap.docs.sort((a, b) => byOrder(String(a.get("order")), String(b.get("order"))))) {
-    const point: StopPoint = { id: d.id, lat: Number(d.get("lat")), lng: Number(d.get("lng")) };
+  for (const d of eventsSnap.docs.sort((a, b) => byOrder(String(a.get("order")), String(b.get("order"))))) {
+    const stop = d.get("stop") as { location?: { latitude?: number; longitude?: number } } | undefined;
+    const lat = stop?.location?.latitude, lng = stop?.location?.longitude;
+    if (typeof lat !== "number" || typeof lng !== "number") continue; // no stop: not part of adjacency (design v1.2 §6.5 rule 2)
+    const point: StopPoint = { id: d.id, lat, lng };
     const day = Number(d.get("day"));
     byDay.set(day, [...(byDay.get(day) ?? []), point]);
     affected.add(d.id);
@@ -247,9 +261,9 @@ async function recomputeTravel(tripId: string, changedStopId: string, days: numb
     } catch (e) {
       const msg = String((e as Error).message ?? e);
       logger.warn("routes call failed", { tripId, mode, pairs: todo.length, error: msg });
-      legs = todo.map((p) => ({ fromStopId: p.from.id, toStopId: p.to.id, mode, error: msg, computedAt: now }));
+      legs = todo.map((p) => ({ fromEventId: p.from.id, toEventId: p.to.id, mode, error: msg, computedAt: now }));
     }
-    for (const leg of legs) batch.set(travelRef.doc(legId(leg.fromStopId, leg.toStopId, leg.mode)), leg);
+    for (const leg of legs) batch.set(travelRef.doc(legId(leg.fromEventId, leg.toEventId, leg.mode)), leg);
   }
   await batch.commit();
   logger.info("travel", { tripId, days, pairs: pairs.length, deleted: plan.toDelete.length, computed: plan.toCompute.DRIVE.length + plan.toCompute.WALK.length, routesCalls: calls });
@@ -343,11 +357,13 @@ export const onActivityCreated = onDocumentCreated("trips/{tripId}/activity/{eve
   const { tripId } = event.params;
   const actorId = String(snap.get("actorId") ?? "");
   const actorName = String(snap.get("actorName") ?? "");
-  const facts: EventFacts = { type: String(snap.get("type") ?? ""), stopName: String(snap.get("stopName") ?? ""), day: Number(snap.get("day") ?? 0) };
-  const stopId = snap.get("stopId") as string | null | undefined;
-  if (stopId) facts.stopId = stopId;
+  const facts: EventFacts = { type: String(snap.get("type") ?? ""), title: String(snap.get("title") ?? snap.get("stopName") ?? ""), day: Number(snap.get("day") ?? 0) };
+  const eventId = (snap.get("eventId") ?? snap.get("stopId")) as string | null | undefined; // stopId: pre-v1.2 activity docs
+  if (eventId) facts.eventId = eventId;
   const fromDay = snap.get("fromDay") as number | null | undefined;
   if (typeof fromDay === "number") facts.fromDay = fromDay;
+  const fixedStart = snap.get("fixedStart") as string | null | undefined;
+  if (fixedStart) facts.fixedStart = fixedStart;
   if (!actorId) { logger.warn("activity without actor; no fan-out", { tripId, eventId: event.params.eventId }); return; }
 
   const windowRef = db.doc(`trips/${tripId}/notify/${actorId}`);
@@ -422,15 +438,82 @@ export const suggestDayOrder = onCall({ secrets: [GEMINI_API_KEY] }, async (req)
   const trip = await db.doc(`trips/${tripId}`).get();
   if (!(trip.get("memberIds") ?? []).includes(uid)) throw new HttpsError("permission-denied", "not a member");
 
-  const stops = await db
-    .collection(`trips/${tripId}/stops`)
+  const events = await db
+    .collection(`trips/${tripId}/events`)
     .where("day", "==", day)
     .get();
-  const ids = stops.docs.map((d) => d.id);
+  const ids = events.docs.map((d) => d.id);
 
   // TODO Phase 3: call Gemini (generateContent with responseSchema =
-  // { orderedStopIds: string[], rationale: string }) using GEMINI_API_KEY.value(),
-  // include the travel matrix in the prompt, then validate that orderedStopIds is a
+  // { orderedEventIds: string[], rationale: string }) using GEMINI_API_KEY.value(),
+  // include the travel matrix in the prompt, then validate that orderedEventIds is a
   // permutation of `ids` before returning. Behind Remote Config flag suggest_order_enabled.
-  return { orderedStopIds: ids, rationale: "placeholder: Gemini call not wired yet" };
+  return { orderedEventIds: ids, rationale: "placeholder: Gemini call not wired yet" };
+});
+
+/**
+ * One-off migration for the v1.1 -> v1.2 data model (design §7 note): copies each
+ * `trips/{id}/stops/{sid}` to `trips/{id}/events/{sid}` with `title = name` and, for place
+ * stops, an embedded `stop { placeId, name, location, address, fetchedAt }`. Ids are unchanged,
+ * so `travel` and `activity` documents keep working. Idempotent; owner-only per trip. Remove
+ * once every environment has migrated.
+ *
+ * Complexity:
+ * - Time: O(S) for the S stop documents across the caller's trips (batched writes of 400).
+ * - Space: O(1) per batch.
+ */
+export const migrateStopsToEvents = onCall(async (req) => {
+  // Under the local Functions shell (no Auth) the operator passes the uid in the body; never in prod.
+  const uid = req.auth?.uid ?? (process.env.FUNCTIONS_EMULATOR === "true" ? String(req.data?.uid ?? "") : "");
+  if (!uid) throw new HttpsError("unauthenticated", "sign in first");
+  const trips = await db.collection("trips").where("memberIds", "array-contains", uid).get();
+  let migrated = 0;
+  for (const trip of trips.docs) {
+    if (trip.get("roles")?.[uid] !== "owner") continue;
+    const stops = await trip.ref.collection("stops").get();
+    let batch = db.batch(); let n = 0;
+    for (const s of stops.docs) {
+      const d = s.data();
+      const isPlace = d.kind !== "custom" && typeof d.lat === "number" && typeof d.lng === "number";
+      const ev: Record<string, unknown> = {
+        title: d.name ?? "",
+        day: d.day ?? 0, order: d.order ?? "", durationMin: d.durationMin ?? 60,
+        notes: d.notes ?? "", category: d.category ?? "",
+        addedBy: d.addedBy ?? "", updatedBy: d.updatedBy ?? "", addedAt: d.addedAt ?? null, updatedAt: d.updatedAt ?? null,
+      };
+      if (d.fixedStart) ev.fixedStart = d.fixedStart;
+      if (d.modeToNext) ev.modeToNext = d.modeToNext;
+      if (isPlace) ev.stop = { placeId: d.placeId ?? "", name: d.name ?? "", location: new GeoPoint(d.lat, d.lng), address: d.address ?? "", fetchedAt: d.placeFetchedAt ?? null };
+      batch.set(trip.ref.collection("events").doc(s.id), ev, { merge: true });
+      batch.delete(s.ref);
+      migrated++;
+      if (++n === 200) { await batch.commit(); batch = db.batch(); n = 0; }
+    }
+    if (n > 0) await batch.commit();
+    // Travel legs keep their ids (event ids are unchanged) but the field names follow the new model.
+    const legs = await trip.ref.collection("travel").get();
+    let lb = db.batch(); let ln = 0;
+    for (const l of legs.docs) {
+      const d = l.data();
+      if (d.fromEventId || !d.fromStopId) continue;
+      lb.update(l.ref, { fromEventId: d.fromStopId, toEventId: d.toStopId, fromStopId: FieldValue.delete(), toStopId: FieldValue.delete() });
+      if (++ln === 200) { await lb.commit(); lb = db.batch(); ln = 0; }
+    }
+    if (ln > 0) await lb.commit();
+    // The Admin-side copies above fire onEventWritten like any write; drop the resulting
+    // "event_added" activity (its actor is the operator's principal, not a member) and any burst
+    // windows it opened, so members do not get a digest about a migration.
+    const noise = await trip.ref.collection("activity").where("type", "==", "event_added").get();
+    let ab = db.batch(); let an = 0;
+    for (const a of noise.docs) {
+      const actor = String(a.get("actorId") ?? "");
+      if (!actor.includes("@") && (trip.get("memberIds") ?? []).includes(actor)) continue;
+      ab.delete(a.ref);
+      if (++an === 200) { await ab.commit(); ab = db.batch(); an = 0; }
+    }
+    if (an > 0) await ab.commit();
+    for (const w of (await trip.ref.collection("notify").get()).docs) if (w.id.includes("@")) await w.ref.delete();
+  }
+  logger.info("migrateStopsToEvents", { uid, migrated });
+  return { migrated };
 });

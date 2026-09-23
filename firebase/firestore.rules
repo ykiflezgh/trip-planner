@@ -17,10 +17,18 @@ service cloud.firestore {
       allow update: if isMember(resource) && role(resource) == 'owner';
       allow delete: if isMember(resource) && role(resource) == 'owner';
 
-      match /stops/{stopId} {
+      // Events, each optionally containing a stop (design v1.2 §7, decision 7).
+      match /events/{eventId} {
         allow read:  if isMember(trip(tripId));
         allow write: if role(trip(tripId)) in ['owner', 'editor'];
       }
+      // Per-day hours (design v1.2 §7): editors set them, everyone reads them.
+      match /days/{day} {
+        allow read:  if isMember(trip(tripId));
+        allow write: if role(trip(tripId)) in ['owner', 'editor'];
+      }
+      // Legacy v1.1 collection: readable so the one-off migration callable can be verified; no client writes.
+      match /stops/{stopId} { allow read: if isMember(trip(tripId)); allow write: if false; }
       match /activity/{id} { allow read: if isMember(trip(tripId)); allow write: if false; }
       match /travel/{id}   { allow read: if isMember(trip(tripId)); allow write: if false; }
     }

@@ -110,7 +110,23 @@ call writes an `error` leg so the client shows a dash and the next change retrie
 renders both modes' legs between consecutive stops (shimmer while missing, never blocking). `ROUTES_API_KEY` holds a real key on the dev project (2026-09-23; rotate with
 `firebase functions:secrets:set ROUTES_API_KEY` and redeploy `onStopWritten`); verified on Android with
 live Routes numbers between two Lisbon stops.
-Still unverified: the Places/Calendar call shapes in `shared/data/`. Cloud Functions in `firebase/functions/` still carry a TODO for Gemini.
+**Phase 3 (branch `calendar`, design v1.2) — events, stops and the shared trip calendar:** the data
+model is now `trips/{id}/events/{eventId}`, where an **event** is the unit of scheduling (title, day,
+order, duration, optional pinned `fixedStart`) and *may contain* a **stop** (embedded `stop { placeId,
+name, location, address, fetchedAt }`). An event without a stop ("Flight to Rome", "Lunch") schedules
+and notifies like any other but is absent from the map and from travel adjacency; there is no `kind`
+field. Design v1.1's `stops` collection is migrated by the one-off `migrateStopsToEvents` callable
+(ids unchanged, so `travel`/`activity` keep working). The pure `schedule/` module (Android, iOS and a
+Node.js library build for the future ICS feed) computes each day from the same data on every device:
+day start + durations + travel legs between consecutive stop-bearing events, pinned events, per-day
+hours (`days/{day}`) and warnings (late arrival, overlap, day overrun); nine golden tests run on JVM
+and Node. The trip screen has Agenda (computed times, warnings) and Day (time grid with drag-to-pin,
+resize, hatched legs) views, an Add-event sheet (place or no place), pin/unpin in the event sheet and
+a Day-hours dialog. Functions: `onEventWritten` classifies writes (added / moved / edited / removed /
+pinned / unpinned / resized), recomputes travel only for structural changes to stop-bearing events,
+and the fan-out pushes `event_*` types. Not yet built: Trip (multi-day) view, time-zone toggle,
+reminders, the ICS feed Function, Gemini suggestions.
+Still unverified: the Places call shapes in `shared/data/`. Cloud Functions in `firebase/functions/` still carry a TODO for Gemini.
 
 ## Layout
 

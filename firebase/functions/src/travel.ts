@@ -7,8 +7,9 @@ export const MODES = ["DRIVE", "WALK"] as const;
 export type Mode = (typeof MODES)[number];
 export const CACHE_MS = 24 * 3600 * 1000;
 
+/** A stop as travel sees it: the id of the event that contains it plus its coordinates. */
 export interface StopPoint {
-  id: string;
+  id: string; // eventId
   lat: number;
   lng: number;
 }
@@ -19,8 +20,8 @@ export interface Pair {
 }
 
 export interface LegDoc {
-  fromStopId: string;
-  toStopId: string;
+  fromEventId: string;
+  toEventId: string;
   mode: Mode;
   seconds?: number;
   meters?: number;
@@ -34,12 +35,12 @@ export interface LegDoc {
  * - Time: O(1).
  * - Space: O(1).
  */
-export function legId(fromStopId: string, toStopId: string, mode: Mode): string {
-  return `${fromStopId}_${toStopId}_${mode}`;
+export function legId(fromEventId: string, toEventId: string, mode: Mode): string {
+  return `${fromEventId}_${toEventId}_${mode}`;
 }
 
 /**
- * Consecutive pairs of a day's stops, already sorted by `order`.
+ * Consecutive pairs of a day's stop-bearing events, already sorted by `order`.
  *
  * Complexity:
  * - Time: O(S) for S stops.
@@ -60,14 +61,14 @@ export interface LegPlan {
 
 /**
  * Decides what to delete and what to ask Routes for, given the affected days' current
- * adjacencies and the trip's existing legs. Only legs touching the affected stops are judged,
+ * adjacencies and the trip's existing legs. Only legs touching the affected events are judged,
  * so other days' legs are left alone (design §8.3: recompute affected adjacencies only).
  *
  * Complexity:
  * - Time: O(P + L) for P current pairs and L existing legs.
  * - Space: O(P + L).
  */
-export function planLegs(pairs: Pair[], affectedStopIds: Set<string>, existing: Map<string, LegDoc>, now: number): LegPlan {
+export function planLegs(pairs: Pair[], affectedEventIds: Set<string>, existing: Map<string, LegDoc>, now: number): LegPlan {
   const desired = new Set<string>();
   const toCompute: Record<Mode, Pair[]> = { DRIVE: [], WALK: [] };
   for (const p of pairs) {
@@ -82,7 +83,7 @@ export function planLegs(pairs: Pair[], affectedStopIds: Set<string>, existing: 
   const toDelete: string[] = [];
   for (const [id, leg] of existing) {
     if (desired.has(id)) continue;
-    if (affectedStopIds.has(leg.fromStopId) || affectedStopIds.has(leg.toStopId)) toDelete.push(id);
+    if (affectedEventIds.has(leg.fromEventId) || affectedEventIds.has(leg.toEventId)) toDelete.push(id);
   }
   return { toDelete, toCompute };
 }
@@ -111,7 +112,7 @@ export function legsFromMatrix(pairs: Pair[], mode: Mode, elements: MatrixElemen
   for (const e of elements) if (e.originIndex === e.destinationIndex) byIndex.set(e.originIndex, e);
   return pairs.map((p, i) => {
     const e = byIndex.get(i);
-    const base = { fromStopId: p.from.id, toStopId: p.to.id, mode, computedAt: now };
+    const base = { fromEventId: p.from.id, toEventId: p.to.id, mode, computedAt: now };
     if (!e) return { ...base, error: "no route element" };
     if (e.status?.code) return { ...base, error: e.status.message ?? `status ${e.status.code}` };
     if (e.condition && e.condition !== "ROUTE_EXISTS") return { ...base, error: e.condition };

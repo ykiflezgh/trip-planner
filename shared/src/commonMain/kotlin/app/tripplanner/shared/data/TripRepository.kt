@@ -1,10 +1,12 @@
 package app.tripplanner.shared.data
 
-import app.tripplanner.shared.core.model.Stop
+import app.tripplanner.shared.core.model.DayHoursDoc
+import app.tripplanner.shared.core.model.Event
 import app.tripplanner.shared.core.model.TravelLeg
 import app.tripplanner.shared.core.model.Trip
 import app.tripplanner.shared.core.util.FractionalIndex
 import dev.gitlive.firebase.Firebase
+import dev.gitlive.firebase.firestore.FieldValue
 import dev.gitlive.firebase.firestore.Timestamp
 import dev.gitlive.firebase.firestore.firestore
 import co.touchlab.kermit.Logger
@@ -31,16 +33,23 @@ interface TripRepository {
     fun myTrips(uid: String): Flow<List<Trip>>
     /** One trip document, live; `null` when missing or not readable. */
     fun trip(tripId: String): Flow<Trip?>
-    fun stops(tripId: String): Flow<List<Stop>>
-    /** Travel legs between consecutive stops, computed by Functions (design §8.3); missing legs are still in flight. */
+    /** The trip's events in (day, order) (design v1.2 §7); each may contain a stop. */
+    fun events(tripId: String): Flow<List<Event>>
+    /** Travel legs between consecutive stop-bearing events, computed by Functions (design §8.3); missing legs are still in flight. */
     fun travel(tripId: String): Flow<List<TravelLeg>>
+    /** Per-day hour overrides (design v1.2 §7, §8.4). */
+    fun days(tripId: String): Flow<List<DayHoursDoc>>
     /** Issues the write and returns the new id immediately; the trip appears through [myTrips] from the local cache. */
     fun createTrip(trip: Trip): String
-    /** Writes the stop with a fresh fractional key between the neighbours; returns the new id immediately. */
-    fun addStop(tripId: String, stop: Stop, afterOrder: String?, beforeOrder: String?): String
+    /** Writes the event with a fresh fractional key between the neighbours; returns the new id immediately. */
+    fun addEvent(tripId: String, event: Event, afterOrder: String?, beforeOrder: String?): String
     /** [updatedBy] is the acting uid, the Function's fallback actor when the write's auth context is missing (design §10). */
-    fun moveStop(tripId: String, stopId: String, day: Int, afterOrder: String?, beforeOrder: String?, updatedBy: String)
-    fun deleteStop(tripId: String, stopId: String)
+    fun moveEvent(tripId: String, eventId: String, day: Int, afterOrder: String?, beforeOrder: String?, updatedBy: String)
+    fun deleteEvent(tripId: String, eventId: String)
+    /** Pins (`"HH:mm"`) or unpins (`null`) an event's start and, when given, moves it to [order] in one write (design §8.4 step 2). */
+    fun setFixedStart(tripId: String, eventId: String, fixedStart: String?, order: String?, updatedBy: String)
+    fun setDuration(tripId: String, eventId: String, durationMin: Int, updatedBy: String)
+    fun setDayHours(tripId: String, day: Int, start: String, end: String, updatedBy: String)
 }
 
 /**
@@ -111,23 +120,33 @@ class FirestoreTripRepository(
             .logListener("trips/$tripId")
 
     /**
-     * Observes real-time stops for [tripId] sorted by day and fractional index order.
+     * Observes real-time events for [tripId] sorted by day and fractional index order.
      *
      * Complexity:
-     * - **Time:** O(S log S) per snapshot emission, where S is the total number of stops in the trip (sorting by day and order).
-     * - **Space:** O(S) heap allocation to instantiate and sort the list of [Stop] objects.
+     * - **Time:** O(E log E) per snapshot emission, where E is the total number of events in the trip (sorting by day and order).
+     * - **Space:** O(E) heap allocation to instantiate and sort the list of [Event] objects.
      */
-    override fun stops(tripId: String): Flow<List<Stop>> =
-        db.collection("trips").document(tripId).collection("stops")
+    override fun events(tripId: String): Flow<List<Event>> =
+        db.collection("trips").document(tripId).collection("events")
             .snapshots // client-side sort keeps the composite index optional on the read path
             .map { qs ->
-                qs.documents.map { it.data<Stop>().copy(id = it.id, pendingSync = it.metadata.hasPendingWrites) }
+                qs.documents.map { it.data<Event>().copy(id = it.id, pendingSync = it.metadata.hasPendingWrites) }
                     .sortedWith(compareBy({ it.day }, { it.order }))
             }
-            .logListener("trips/$tripId/stops")
+            .logListener("trips/$tripId/events")
 
     /**
-     * Observes the trip's travel legs (bounded by 2 x stops per day, design §15).
+     * Complexity:
+     * - **Time:** O(D) per snapshot for the D overridden days.
+     * - **Space:** O(D).
+     */
+    override fun days(tripId: String): Flow<List<DayHoursDoc>> =
+        db.collection("trips").document(tripId).collection("days").snapshots
+            .map { qs -> qs.documents.map { it.data<DayHoursDoc>().copy(day = it.id.toIntOrNull() ?: 0) } }
+            .logListener("trips/$tripId/days")
+
+    /**
+     * Observes the trip's travel legs (bounded by 2 x events per day, design §15).
      *
      * Complexity:
      * - **Time:** O(L) per snapshot for L legs.
@@ -153,54 +172,95 @@ class FirestoreTripRepository(
     }
 
     /**
-     * Adds a stop with a calculated fractional index between [afterOrder] and [beforeOrder].
+     * Adds an event with a calculated fractional index between [afterOrder] and [beforeOrder].
      *
      * Complexity:
      * - **Time:** O(L) where L is the fractional index key length (effectively O(1)) + O(1) document write.
      * - **Space:** O(L) auxiliary space for key generation.
      */
-    override fun addStop(tripId: String, stop: Stop, afterOrder: String?, beforeOrder: String?): String {
-        val doc = db.collection("trips").document(tripId).collection("stops").document
+    override fun addEvent(tripId: String, event: Event, afterOrder: String?, beforeOrder: String?): String {
+        val doc = db.collection("trips").document(tripId).collection("events").document
         val order = FractionalIndex.between(afterOrder, beforeOrder)
-        write("add stop") {
+        write("add event") {
             doc.set(
-                stop.copy(
+                event.copy(
                     id = doc.id,
                     order = order,
+                    stop = event.stop?.copy(fetchedAt = Timestamp.ServerTimestamp),
                     addedAt = Timestamp.ServerTimestamp,
                     updatedAt = Timestamp.ServerTimestamp,
-                    placeFetchedAt = Timestamp.ServerTimestamp,
                 ),
             )
         }
         return doc.id
     }
 
+    private fun eventDoc(tripId: String, eventId: String) = db.collection("trips").document(tripId).collection("events").document(eventId)
+
     /**
-     * Moves a stop to [day] and reorders it between [afterOrder] and [beforeOrder].
+     * Moves an event to [day] and reorders it between [afterOrder] and [beforeOrder].
      *
      * Complexity:
      * - **Time:** O(L) for index calculation + O(1) single-document field update.
      * - **Space:** O(L) auxiliary space for the index key.
      */
-    override fun moveStop(tripId: String, stopId: String, day: Int, afterOrder: String?, beforeOrder: String?, updatedBy: String) {
+    override fun moveEvent(tripId: String, eventId: String, day: Int, afterOrder: String?, beforeOrder: String?, updatedBy: String) {
         val order = FractionalIndex.between(afterOrder, beforeOrder)
-        // NOT_FOUND here means another member deleted the stop: the next snapshot drops the local
+        // NOT_FOUND here means another member deleted the event: the next snapshot drops the local
         // change and the failure surfaces through [writeFailures] (design §7).
-        write("move stop") {
-            db.collection("trips").document(tripId).collection("stops").document(stopId)
-                .update("day" to day, "order" to order, "updatedBy" to updatedBy, "updatedAt" to Timestamp.ServerTimestamp)
+        write("move event") {
+            eventDoc(tripId, eventId).update("day" to day, "order" to order, "updatedBy" to updatedBy, "updatedAt" to Timestamp.ServerTimestamp)
         }
     }
 
     /**
-     * Deletes a stop document by [stopId].
+     * Deletes an event document by [eventId].
      *
      * Complexity:
      * - **Time:** O(1) single-document deletion.
      * - **Space:** O(1) auxiliary memory.
      */
-    override fun deleteStop(tripId: String, stopId: String) {
-        write("remove stop") { db.collection("trips").document(tripId).collection("stops").document(stopId).delete() }
+    override fun deleteEvent(tripId: String, eventId: String) {
+        write("remove event") { eventDoc(tripId, eventId).delete() }
+    }
+
+    /**
+     * Complexity:
+     * - **Time:** O(1) single-document update.
+     * - **Space:** O(1).
+     */
+    override fun setFixedStart(tripId: String, eventId: String, fixedStart: String?, order: String?, updatedBy: String) {
+        write(if (fixedStart == null) "unpin event" else "pin event") {
+            val fields = buildList<Pair<String, Any?>> {
+                add("fixedStart" to (fixedStart ?: FieldValue.delete))
+                if (order != null) add("order" to order)
+                add("updatedBy" to updatedBy)
+                add("updatedAt" to Timestamp.ServerTimestamp)
+            }
+            eventDoc(tripId, eventId).update(*fields.toTypedArray())
+        }
+    }
+
+    /**
+     * Complexity:
+     * - **Time:** O(1) single-document update.
+     * - **Space:** O(1).
+     */
+    override fun setDuration(tripId: String, eventId: String, durationMin: Int, updatedBy: String) {
+        write("resize event") {
+            eventDoc(tripId, eventId).update("durationMin" to durationMin, "updatedBy" to updatedBy, "updatedAt" to Timestamp.ServerTimestamp)
+        }
+    }
+
+    /**
+     * Complexity:
+     * - **Time:** O(1) merge write.
+     * - **Space:** O(1).
+     */
+    override fun setDayHours(tripId: String, day: Int, start: String, end: String, updatedBy: String) {
+        write("set day hours") {
+            db.collection("trips").document(tripId).collection("days").document(day.toString())
+                .set(mapOf("start" to start, "end" to end, "updatedBy" to updatedBy, "updatedAt" to Timestamp.ServerTimestamp), merge = true)
+        }
     }
 }

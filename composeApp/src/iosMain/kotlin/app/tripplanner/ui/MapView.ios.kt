@@ -11,21 +11,21 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.viewinterop.UIKitViewController
 import app.tripplanner.IosBridges
 import app.tripplanner.NativeMapStop
-import app.tripplanner.shared.core.model.Stop
+import app.tripplanner.shared.core.model.Event
 
 /**
- * GMSMapView hosted through [app.tripplanner.NativeMapFactory]; stops and selection are pushed
+ * GMSMapView hosted through [app.tripplanner.NativeMapFactory]; events and selection are pushed
  * into the Swift controller, taps come back through the factory callback (design §6.4).
  *
  * Complexity:
- * - **Recomposition Time:** O(S) when stops change (one [NativeMapStop] per stop is bridged);
+ * - **Recomposition Time:** O(S) when events change (one [NativeMapStop] per stop is bridged);
  *   O(1) when only the selection changes.
  * - **Composition Memory:** O(1) Compose nodes - the S markers live in the native map.
  */
 @Composable
 actual fun MapView(
-    stops: List<Stop>,
-    selectedStopId: String?,
+    events: List<Event>,
+    selectedEventId: String?,
     onStopTapped: (String) -> Unit,
     modifier: Modifier,
 ) {
@@ -39,8 +39,8 @@ actual fun MapView(
 
     UIKitViewController(factory = { map.viewController }, modifier = modifier.fillMaxSize())
 
-    LaunchedEffect(map, stops) {
-        map.setStops(stops.map { NativeMapStop(it.id, it.name, it.lat, it.lng) })
+    LaunchedEffect(map, events) {
+        map.setStops(events.mapNotNull { e -> e.stop?.let { NativeMapStop(e.id, e.title, it.location.latitude, it.location.longitude) } })
     }
-    LaunchedEffect(map, selectedStopId) { map.setSelectedStop(selectedStopId) }
+    LaunchedEffect(map, selectedEventId) { map.setSelectedStop(selectedEventId) }
 }

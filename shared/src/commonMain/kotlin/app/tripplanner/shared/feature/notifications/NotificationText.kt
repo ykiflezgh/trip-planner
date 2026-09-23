@@ -10,11 +10,12 @@ object PushKeys {
     const val ACTOR_ID = "actorId"
     const val ACTOR_NAME = "actorName"
     const val TYPE = "type"
-    const val STOP_ID = "stopId"
-    const val STOP_NAME = "stopName"
+    const val EVENT_ID = "eventId"
+    const val TITLE = "title"
     const val DAY = "day"
     const val FROM_DAY = "fromDay"
     const val COUNT = "count"
+    const val FIXED_START = "fixedStart"
 }
 
 /** Parsed FCM data payload; one tray entry per (trip, actor) so a digest replaces the singles (design §10). */
@@ -25,11 +26,12 @@ data class PushPayload(
     val actorId: String,
     val actorName: String,
     val type: String,
-    val stopId: String?,
-    val stopName: String,
+    val eventId: String?,
+    val title: String,
     val day: Int,
     val fromDay: Int?,
     val count: Int,
+    val fixedStart: String? = null,
 ) {
     val isDigest: Boolean get() = kind == "digest"
 
@@ -57,11 +59,12 @@ data class PushPayload(
                 actorId = data[PushKeys.ACTOR_ID].orEmpty(),
                 actorName = data[PushKeys.ACTOR_NAME].orEmpty(),
                 type = data[PushKeys.TYPE].orEmpty(),
-                stopId = data[PushKeys.STOP_ID]?.takeIf { it.isNotBlank() },
-                stopName = data[PushKeys.STOP_NAME].orEmpty(),
+                eventId = data[PushKeys.EVENT_ID]?.takeIf { it.isNotBlank() },
+                title = data[PushKeys.TITLE].orEmpty(),
                 day = data[PushKeys.DAY]?.toIntOrNull() ?: 0,
                 fromDay = data[PushKeys.FROM_DAY]?.toIntOrNull(),
                 count = data[PushKeys.COUNT]?.toIntOrNull() ?: 1,
+                fixedStart = data[PushKeys.FIXED_START]?.takeIf { it.isNotBlank() },
             )
         }
     }
@@ -80,15 +83,20 @@ object NotificationText {
      * - **Time:** O(L) string building for the L-character result.
      * - **Space:** O(L).
      */
-    fun describe(type: String, actorName: String, stopName: String, day: Int, fromDay: Int?): String {
+    fun describe(type: String, actorName: String, title: String, day: Int, fromDay: Int?, fixedStart: String? = null): String {
         val who = actorName.ifBlank { "Someone" }
-        val what = stopName.ifBlank { "a stop" }
-        return when (type) {
-            "stop_added" -> "$who added $what to Day ${day + 1}"
-            "stop_removed" -> "$who removed $what from Day ${day + 1}"
-            "stop_moved" -> if (fromDay != null && fromDay != day) "$who moved $what from Day ${fromDay + 1} to Day ${day + 1}" else "$who reordered $what on Day ${day + 1}"
-            "stop_edited" -> "$who edited $what"
+        val what = title.ifBlank { "an event" }
+        // Pre-v1.2 activity used stop_* / entry_* type names; same meanings.
+        val kind = type.replaceFirst("stop_", "event_").replaceFirst("entry_", "event_")
+        return when (kind) {
+            "event_added" -> "$who added $what to Day ${day + 1}"
+            "event_removed" -> "$who removed $what from Day ${day + 1}"
+            "event_moved" -> if (fromDay != null && fromDay != day) "$who moved $what from Day ${fromDay + 1} to Day ${day + 1}" else "$who reordered $what on Day ${day + 1}"
+            "event_edited" -> "$who edited $what"
             "member_joined" -> "$who joined the trip"
+            "event_pinned" -> "$who moved $what to ${fixedStart ?: "a fixed time"} on Day ${day + 1}"
+            "event_unpinned" -> "$who unpinned $what"
+            "event_resized" -> "$who changed how long $what takes"
             else -> "$who changed the plan"
         }
     }
@@ -98,7 +106,7 @@ object NotificationText {
      * - **Time:** O(L).
      * - **Space:** O(L).
      */
-    fun describe(event: ActivityEvent): String = describe(event.type, event.actorName, event.stopName, event.day, event.fromDay)
+    fun describe(event: ActivityEvent): String = describe(event.type, event.actorName, event.title.ifBlank { event.stopName }, event.day, event.fromDay, event.fixedStart)
 
     /**
      * Notification title/body. Digest: "Ana made 4 changes to Paris".
@@ -111,9 +119,9 @@ object NotificationText {
         val title = p.tripName.ifBlank { "Trip Planner" }
         val who = p.actorName.ifBlank { "Someone" }
         val body = if (p.isDigest) {
-            "$who made ${p.count} changes" + (if (p.stopName.isNotBlank()) " · latest: ${describe(p.type, "", p.stopName, p.day, p.fromDay).removePrefix("Someone ")}" else "")
+            "$who made ${p.count} changes" + (if (p.title.isNotBlank()) " · latest: ${describe(p.type, "", p.title, p.day, p.fromDay, p.fixedStart).removePrefix("Someone ")}" else "")
         } else {
-            describe(p.type, p.actorName, p.stopName, p.day, p.fromDay)
+            describe(p.type, p.actorName, p.title, p.day, p.fromDay, p.fixedStart)
         }
         return title to body
     }
