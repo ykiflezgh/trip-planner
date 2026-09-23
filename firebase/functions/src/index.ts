@@ -16,6 +16,7 @@ import { getFunctions } from "firebase-admin/functions";
 import * as crypto from "node:crypto";
 import { needsDigest, planNotification, tokensToPrune, type BurstWindow, type EventFacts } from "./burst";
 import { buildMessage, type Notice } from "./notifications";
+import { MODES, adjacentPairs, computeMatrix, legId, legsFromMatrix, planLegs, type LegDoc, type StopPoint } from "./travel";
 
 initializeApp();
 const db = getFirestore();
@@ -192,11 +193,65 @@ export const onStopWritten = onDocumentWrittenWithAuthContext(
     });
 
     // 2. Travel-time recompute for affected adjacencies (§8.3)
-    // TODO Phase 2: load the day's stops ordered by `order`, find neighbours of
-    // stopId, call Routes API computeRouteMatrix with ROUTES_API_KEY.value(),
-    // honor a 24h cache in trips/{tripId}/travel, delete legs that no longer exist.
+    if (facts.type !== "stop_edited") {
+      const days = new Set<number>([facts.day]);
+      if (facts.fromDay !== undefined) days.add(facts.fromDay);
+      await recomputeTravel(tripId, stopId, [...days]);
+    }
   },
 );
+
+/**
+ * §8.3 — legs for the affected days: current adjacencies vs. stored legs, then at most one
+ * Routes call per mode (two per stop change, design §15 asks for fewer than five). Legs whose
+ * adjacency disappeared are deleted; fresh ones (< 24 h) are kept.
+ *
+ * Complexity:
+ * - Time: O(S log S + L) to order the S stops of the affected days and scan L stored legs,
+ *   plus O(P^2) billed matrix elements for the P pairs to compute (P <= 3 per change).
+ * - Space: O(S + L).
+ */
+async function recomputeTravel(tripId: string, changedStopId: string, days: number[]): Promise<void> {
+  const stopsSnap = await db.collection(`trips/${tripId}/stops`).where("day", "in", days).get();
+  const byDay = new Map<number, StopPoint[]>();
+  const affected = new Set<string>([changedStopId]);
+  // Fractional-index keys sort by plain code-point order (core/util/FractionalIndex), not locale order.
+  const byOrder = (a: string, b: string) => (a < b ? -1 : a > b ? 1 : 0);
+  for (const d of stopsSnap.docs.sort((a, b) => byOrder(String(a.get("order")), String(b.get("order"))))) {
+    const point: StopPoint = { id: d.id, lat: Number(d.get("lat")), lng: Number(d.get("lng")) };
+    const day = Number(d.get("day"));
+    byDay.set(day, [...(byDay.get(day) ?? []), point]);
+    affected.add(d.id);
+  }
+  const pairs = [...byDay.values()].flatMap(adjacentPairs);
+
+  const travelRef = db.collection(`trips/${tripId}/travel`);
+  const existing = new Map<string, LegDoc>();
+  for (const d of (await travelRef.get()).docs) existing.set(d.id, d.data() as LegDoc);
+  const now = Date.now();
+  const plan = planLegs(pairs, affected, existing, now);
+
+  const batch = db.batch();
+  for (const id of plan.toDelete) batch.delete(travelRef.doc(id));
+  let calls = 0;
+  const apiKey = ROUTES_API_KEY.value();
+  for (const mode of MODES) {
+    const todo = plan.toCompute[mode];
+    if (todo.length === 0) continue;
+    let legs: LegDoc[];
+    try {
+      calls++;
+      legs = legsFromMatrix(todo, mode, await computeMatrix(apiKey, todo, mode), now);
+    } catch (e) {
+      const msg = String((e as Error).message ?? e);
+      logger.warn("routes call failed", { tripId, mode, pairs: todo.length, error: msg });
+      legs = todo.map((p) => ({ fromStopId: p.from.id, toStopId: p.to.id, mode, error: msg, computedAt: now }));
+    }
+    for (const leg of legs) batch.set(travelRef.doc(legId(leg.fromStopId, leg.toStopId, leg.mode)), leg);
+  }
+  await batch.commit();
+  logger.info("travel", { tripId, days, pairs: pairs.length, deleted: plan.toDelete.length, computed: plan.toCompute.DRIVE.length + plan.toCompute.WALK.length, routesCalls: calls });
+}
 
 interface Recipient {
   ref: DocumentReference;

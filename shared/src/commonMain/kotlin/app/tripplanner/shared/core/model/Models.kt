@@ -46,14 +46,22 @@ data class Stop(
     @Transient val pendingSync: Boolean = false,
 )
 
+/**
+ * `trips/{tripId}/travel/{from}_{to}_{mode}`, written only by Functions (design §7, §8.3).
+ * Either [seconds]/[meters] are set or [error] explains why Routes had no answer.
+ */
 @Serializable
 data class TravelLeg(
-    val fromStopId: String,
-    val toStopId: String,
-    val mode: TravelMode,
-    val seconds: Int,
-    val meters: Int,
-)
+    val fromStopId: String = "",
+    val toStopId: String = "",
+    val mode: TravelMode = TravelMode.DRIVE,
+    val seconds: Int? = null,
+    val meters: Int? = null,
+    val error: String? = null,
+    val computedAt: Long? = null,      // epoch ms
+) {
+    val ok: Boolean get() = error == null && seconds != null
+}
 
 /**
  * One feed entry, written only by Functions (design §7, §10). Structured fields let the client

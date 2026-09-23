@@ -102,8 +102,15 @@ same facts as `loc-key`/`loc-args` resolved from `en.lproj/Localizable.strings`;
 needs the APNs auth key uploaded in Firebase Console -> Cloud Messaging. The dev project sets
 `NOTIFY_ACTOR_DEBUG=true` (`functions/.env.tripplanner-dev-fe0a4`) so a single test account sees
 its own pushes; never set it for prod.
-Still unverified: the Places/Calendar call shapes in `shared/data/`. Cloud Functions in `firebase/functions/` still carry TODOs for
-Routes (travel times) and Gemini.
+**Travel times (design §8.3):** `onStopWritten` recomputes only the affected days' adjacencies
+(`travel.ts`: current consecutive pairs vs. stored `travel/{from}_{to}_{mode}` legs; legs whose
+adjacency vanished are deleted, fresh ones < 24 h are kept, the rest go to one `computeRouteMatrix`
+call per mode - two Routes calls per stop change, driving and walking, transit deferred). A failed
+call writes an `error` leg so the client shows a dash and the next change retries. The trip screen
+renders both modes' legs between consecutive stops (shimmer while missing, never blocking). `ROUTES_API_KEY` holds a real key on the dev project (2026-09-23; rotate with
+`firebase functions:secrets:set ROUTES_API_KEY` and redeploy `onStopWritten`); verified on Android with
+live Routes numbers between two Lisbon stops.
+Still unverified: the Places/Calendar call shapes in `shared/data/`. Cloud Functions in `firebase/functions/` still carry a TODO for Gemini.
 
 ## Layout
 

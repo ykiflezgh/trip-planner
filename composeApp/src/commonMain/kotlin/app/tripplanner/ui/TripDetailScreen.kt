@@ -1,7 +1,17 @@
 package app.tripplanner.ui
 
 import androidx.compose.foundation.clickable
+import androidx.compose.animation.core.RepeatMode
+import androidx.compose.animation.core.animateFloat
+import androidx.compose.animation.core.infiniteRepeatable
+import androidx.compose.animation.core.rememberInfiniteTransition
+import androidx.compose.animation.core.tween
+import androidx.compose.foundation.background
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.ui.draw.alpha
+import androidx.compose.ui.draw.clip
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -48,7 +58,10 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import app.tripplanner.shared.core.model.Stop
+import app.tripplanner.shared.core.model.TravelLeg
+import app.tripplanner.shared.core.model.TravelMode
 import app.tripplanner.shared.core.model.Trip
+import app.tripplanner.shared.feature.trips.TravelText
 import app.tripplanner.shared.feature.stops.StopReorder
 import app.tripplanner.shared.feature.trips.TripDays
 import app.tripplanner.shared.feature.trips.TripDetailViewModel
@@ -187,6 +200,13 @@ fun TripDetailScreen(tripId: String, name: String, focusStopId: String? = null, 
                 }
                 items(localStops, key = { it.id }) { stop ->
                     ReorderableItem(reorderable, key = stop.id) { isDragging ->
+                        // Leg from the previous stop in the *local* (possibly mid-drag) order.
+                        val index = localStops.indexOfFirst { it.id == stop.id }
+                        val previous = localStops.getOrNull(index - 1)
+                        Column {
+                        if (previous != null) {
+                            TravelConnector(legs = TravelMode.entries.map { it to state.leg(previous.id, stop.id, it) })
+                        }
                         StopRow(
                             stop = stop,
                             position = localStops.indexOfFirst { it.id == stop.id } + 1,
@@ -198,6 +218,7 @@ fun TripDetailScreen(tripId: String, name: String, focusStopId: String? = null, 
                                 vm.moveStop(stop.id, state.selectedDay, after, before)
                             },
                         )
+                        }
                     }
                 }
                 item(key = "spacer") { Spacer(Modifier.height(88.dp)) } // keep the last row clear of the FAB
@@ -233,6 +254,43 @@ private const val STALE_SYNC_AFTER_MS = 30_000L
 
 /** testTag is Android-only semantics today; keep the call site tidy without pulling ui-test deps. */
 private fun Modifier.testTagCompat(@Suppress("UNUSED_PARAMETER") tag: String): Modifier = this
+
+/**
+ * Travel from the previous stop (design §8.3), one entry per mode: the Function's leg when
+ * present, a dash when Routes had no answer, and a shimmer while the leg is still being
+ * computed - never blocking.
+ *
+ * Complexity:
+ * - **Recomposition Time:** O(M) for the M modes; the shimmer is one shared infinite animation.
+ * - **Composition Memory:** O(M).
+ */
+@Composable
+private fun TravelConnector(legs: List<Pair<TravelMode, TravelLeg?>>) {
+    val transition = rememberInfiniteTransition(label = "leg-shimmer")
+    val alpha by transition.animateFloat(
+        initialValue = 0.25f, targetValue = 0.8f,
+        animationSpec = infiniteRepeatable(tween(700), RepeatMode.Reverse), label = "alpha",
+    )
+    Row(
+        Modifier.fillMaxWidth().padding(start = 52.dp, end = 16.dp, top = 2.dp, bottom = 2.dp),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(16.dp),
+    ) {
+        legs.forEach { (mode, leg) ->
+            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                Text(if (mode == TravelMode.DRIVE) "\uD83D\uDE97" else "\uD83D\uDEB6", style = MaterialTheme.typography.bodySmall)
+                if (leg == null) {
+                    Box(
+                        Modifier.height(12.dp).width(72.dp).clip(RoundedCornerShape(6.dp)).alpha(alpha)
+                            .background(MaterialTheme.colorScheme.surfaceVariant),
+                    )
+                } else {
+                    Text(TravelText.format(leg), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                }
+            }
+        }
+    }
+}
 
 /**
  * Day tabs labelled with the calendar date when the trip document is available.

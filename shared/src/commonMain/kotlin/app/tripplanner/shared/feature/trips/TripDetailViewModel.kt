@@ -3,6 +3,8 @@ package app.tripplanner.shared.feature.trips
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import app.tripplanner.shared.core.model.Stop
+import app.tripplanner.shared.core.model.TravelLeg
+import app.tripplanner.shared.core.model.TravelMode
 import app.tripplanner.shared.core.model.Trip
 import app.tripplanner.shared.data.AuthRepository
 import app.tripplanner.shared.data.FirestoreNetworkSync
@@ -40,6 +42,8 @@ data class TripDetailUiState(
     /** The signed-in user owns this trip: only owners can share it (design §8.2). */
     val isOwner: Boolean = false,
     val sharing: Boolean = false,
+    /** Travel legs by (fromStopId, toStopId, mode) (design §8.3); absent = still computing. */
+    val legs: Map<Triple<String, String, TravelMode>, TravelLeg> = emptyMap(),
     /** This user muted push for this trip (`users/{uid}.notificationPrefs.mutedTripIds`, design §10). */
     val muted: Boolean = false,
     /** One-shot: the invite link to hand to the platform share sheet; the screen calls [TripDetailViewModel.consumeShare]. */
@@ -51,6 +55,13 @@ data class TripDetailUiState(
     val dayCount: Int get() = trip?.let { TripDays.count(it) } ?: 1
     /** Stops of the selected day in itinerary order (the repository sorts by fractional key). */
     val stopsForSelectedDay: List<Stop> get() = stopsByDay[selectedDay].orEmpty()
+
+    /**
+     * Complexity:
+     * - **Time:** O(1) map lookup.
+     * - **Space:** O(1).
+     */
+    fun leg(fromStopId: String, toStopId: String, mode: TravelMode): TravelLeg? = legs[Triple(fromStopId, toStopId, mode)]
 }
 
 class TripDetailViewModel(
@@ -69,11 +80,14 @@ class TripDetailViewModel(
     private val selectedDay = MutableStateFlow(0)
     private val message = MutableStateFlow<String?>(null)
     private val share = MutableStateFlow<Pair<Boolean, String?>>(false to null) // sharing, shareUrl
+    /** UI-only state folded into one flow so the outer combine stays within the typed arity. */
+    private data class Local(val selectedStopId: String?, val selectedDay: Int, val message: String?, val sharing: Boolean, val shareUrl: String?)
 
     private val stops = repo.stops(tripId)
         .map { stops -> TripDetailUiState(loading = false, stopsByDay = stops.groupBy { it.day }) }
         .catch { emit(TripDetailUiState(loading = false, error = it.message ?: "Could not load stops")) }
     private val trip = repo.trip(tripId).catch { emit(null) }
+    private val travel = repo.travel(tripId).catch { emit(emptyList()) }
     @OptIn(ExperimentalCoroutinesApi::class)
     private val muted = auth.user.flatMapLatest { u -> if (u == null) flowOf(false) else users.prefs(u.uid).map { tripId in it.mutedTripIds } }.catch { emit(false) }
 
@@ -91,8 +105,9 @@ class TripDetailViewModel(
      *
      * Complexity:
      * - **Time:** O(S) per stops emission, where S is the number of stops in the trip (due to
-     *   `stops.groupBy { it.day }`); O(1) per trip or selection change (shallow copy).
-     * - **Space:** O(S) auxiliary heap space to hold the grouped map and stop lists.
+     *   `stops.groupBy { it.day }`); O(L) per travel emission for L legs; O(1) per trip or
+     *   selection change (shallow copy).
+     * - **Space:** O(S + L) auxiliary heap space for the grouped stops and the leg map.
      */
     val state: StateFlow<TripDetailUiState> =
         combine(
@@ -100,8 +115,11 @@ class TripDetailViewModel(
                 val uid = auth.currentUser?.uid
                 s.copy(trip = t, online = online, muted = m, isOwner = uid != null && t?.roles?.get(uid) == "owner")
             },
-            selectedStopId, selectedDay, message, share,
-        ) { s, sel, day, msg, sh -> s.copy(selectedStopId = sel, selectedDay = day, message = msg, sharing = sh.first, shareUrl = sh.second) }
+            travel.map { legs -> legs.associateBy { Triple(it.fromStopId, it.toStopId, it.mode) } },
+            combine(selectedStopId, selectedDay, message, share) { sel, day, msg, sh -> Local(sel, day, msg, sh.first, sh.second) },
+        ) { s, legs, l ->
+            s.copy(legs = legs, selectedStopId = l.selectedStopId, selectedDay = l.selectedDay, message = l.message, sharing = l.sharing, shareUrl = l.shareUrl)
+        }
             .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), TripDetailUiState())
 
     /**

@@ -1,6 +1,7 @@
 package app.tripplanner.shared.data
 
 import app.tripplanner.shared.core.model.Stop
+import app.tripplanner.shared.core.model.TravelLeg
 import app.tripplanner.shared.core.model.Trip
 import app.tripplanner.shared.core.util.FractionalIndex
 import dev.gitlive.firebase.Firebase
@@ -31,6 +32,8 @@ interface TripRepository {
     /** One trip document, live; `null` when missing or not readable. */
     fun trip(tripId: String): Flow<Trip?>
     fun stops(tripId: String): Flow<List<Stop>>
+    /** Travel legs between consecutive stops, computed by Functions (design §8.3); missing legs are still in flight. */
+    fun travel(tripId: String): Flow<List<TravelLeg>>
     /** Issues the write and returns the new id immediately; the trip appears through [myTrips] from the local cache. */
     fun createTrip(trip: Trip): String
     /** Writes the stop with a fresh fractional key between the neighbours; returns the new id immediately. */
@@ -122,6 +125,19 @@ class FirestoreTripRepository(
                     .sortedWith(compareBy({ it.day }, { it.order }))
             }
             .logListener("trips/$tripId/stops")
+
+    /**
+     * Observes the trip's travel legs (bounded by 2 x stops per day, design §15).
+     *
+     * Complexity:
+     * - **Time:** O(L) per snapshot for L legs.
+     * - **Space:** O(L).
+     */
+    override fun travel(tripId: String): Flow<List<TravelLeg>> =
+        db.collection("trips").document(tripId).collection("travel")
+            .snapshots
+            .map { qs -> qs.documents.map { it.data<TravelLeg>() } }
+            .logListener("trips/$tripId/travel")
 
     /**
      * Creates a new trip document.
