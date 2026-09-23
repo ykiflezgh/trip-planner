@@ -40,7 +40,7 @@ actual fun MapView(
     UIKitViewController(factory = { map.viewController }, modifier = modifier.fillMaxSize())
 
     LaunchedEffect(map, stops) {
-        map.setStops(stops.map { NativeMapStop(it.id, it.name, it.lat, it.lng) })
+        map.setStops(stops.filter { it.hasPlace }.map { NativeMapStop(it.id, it.name, it.lat ?: 0.0, it.lng ?: 0.0) })
     }
     LaunchedEffect(map, selectedStopId) { map.setSelectedStop(selectedStopId) }
 }

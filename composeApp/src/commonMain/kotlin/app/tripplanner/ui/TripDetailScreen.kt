@@ -217,7 +217,7 @@ fun TripDetailScreen(tripId: String, name: String, focusStopId: String? = null, 
                 item(key = "map") {
                     Box(Modifier.fillMaxWidth().height(MAP_HEIGHT)) {
                         MapView(
-                            stops = localStops,
+                            stops = localStops.filter { it.hasPlace }, // custom entries have no place (design v1.1 §7)
                             selectedStopId = state.selectedStopId,
                             onStopTapped = vm::selectStop,
                             modifier = Modifier.fillMaxSize(),
@@ -241,12 +241,20 @@ fun TripDetailScreen(tripId: String, name: String, focusStopId: String? = null, 
                 }
                 items(localStops, key = { it.id }) { stop ->
                     ReorderableItem(reorderable, key = stop.id) { isDragging ->
-                        // Leg from the previous stop in the *local* (possibly mid-drag) order.
+                        // Leg from the previous *place* stop (custom entries have none): the engine's
+                        // adjacency when the schedule is ready, else the local (possibly mid-drag) neighbour.
                         val index = localStops.indexOfFirst { it.id == stop.id }
-                        val previous = localStops.getOrNull(index - 1)
+                        val previous = localStops.take(index).lastOrNull { it.hasPlace }
+                        val engineLeg = timed[stop.id]?.travelBefore
+                        val pair = when {
+                            !stop.hasPlace -> null
+                            engineLeg != null -> engineLeg.fromStopId to engineLeg.toStopId
+                            previous != null -> previous.id to stop.id
+                            else -> null
+                        }
                         Column {
-                        if (previous != null) {
-                            TravelConnector(legs = TravelMode.entries.map { it to state.leg(previous.id, stop.id, it) })
+                        if (pair != null) {
+                            TravelConnector(legs = TravelMode.entries.map { it to state.leg(pair.first, pair.second, it) })
                         }
                         StopRow(
                             stop = stop,

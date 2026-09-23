@@ -45,8 +45,9 @@ data class Stop(
     val kind: String = "place",
     val placeId: String = "",
     val name: String = "",
-    val lat: Double = 0.0,
-    val lng: Double = 0.0,
+    /** Coordinates only for place stops; custom entries have none and never appear on the map. */
+    val lat: Double? = null,
+    val lng: Double? = null,
     val address: String = "",
     val day: Int = 0,                     // 0-based day index within the trip
     val order: String = "",               // fractional index key (core/util/FractionalIndex)
@@ -66,6 +67,9 @@ data class Stop(
     /** Snapshot metadata, not a field: true while a local write awaits the server (design §9). */
     @Transient val pendingSync: Boolean = false,
 ) {
+    /** True for a stop with a location to draw and route through (design v1.1 §7: place stops only). */
+    val hasPlace: Boolean get() = kind != KIND_CUSTOM && lat != null && lng != null
+
     companion object {
         const val KIND_PLACE = "place"
         const val KIND_CUSTOM = "custom"

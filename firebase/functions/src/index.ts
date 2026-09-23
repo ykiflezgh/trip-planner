@@ -228,6 +228,7 @@ async function recomputeTravel(tripId: string, changedStopId: string, days: numb
   const byOrder = (a: string, b: string) => (a < b ? -1 : a > b ? 1 : 0);
   for (const d of stopsSnap.docs.sort((a, b) => byOrder(String(a.get("order")), String(b.get("order"))))) {
     if (d.get("kind") === "custom") continue; // adjacency skips custom entries (design v1.1 §6.5 rule 2)
+    if (typeof d.get("lat") !== "number" || typeof d.get("lng") !== "number") continue; // no place, nothing to route
     const point: StopPoint = { id: d.id, lat: Number(d.get("lat")), lng: Number(d.get("lng")) };
     const day = Number(d.get("day"));
     byDay.set(day, [...(byDay.get(day) ?? []), point]);
