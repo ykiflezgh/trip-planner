@@ -16,6 +16,7 @@
         "*.local"
       ],
       "predeploy": [
+        "cd \"$RESOURCE_DIR/../..\" && ./gradlew -q :schedule:packageForFunctions",
         "npm --prefix \"$RESOURCE_DIR\" run lint",
         "npm --prefix \"$RESOURCE_DIR\" run build"
       ]
@@ -24,6 +25,13 @@
   "hosting": {
     "public": "hosting/public",
     "rewrites": [
+      {
+        "source": "/cal/**",
+        "function": {
+          "functionId": "calendarFeed",
+          "region": "us-central1"
+        }
+      },
       {
         "source": "/join/**",
         "destination": "/index.html"

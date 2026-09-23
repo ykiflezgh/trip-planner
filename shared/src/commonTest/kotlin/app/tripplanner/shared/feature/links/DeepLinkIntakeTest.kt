@@ -23,6 +23,17 @@ class DeepLinkIntakeTest {
     }
 
     @Test
+    fun feedEventLinksOpenTheTripAndStop() {
+        val intake = DeepLinkIntake()
+        assertTrue(intake.offer("tripplanner://trip/8IYqFIfB86A81jgJZmUT/stop/M2K5bF7Q40ikmRRdVYxs"))
+        assertEquals(DeepLink.OpenTrip("8IYqFIfB86A81jgJZmUT", "M2K5bF7Q40ikmRRdVYxs"), intake.consume())
+        assertTrue(intake.offer("tripplanner://trip/abc"))
+        assertEquals(DeepLink.OpenTrip("abc", null), intake.consume())
+        assertFalse(intake.offer("tripplanner://trip/abc/other/x"))
+        assertFalse(intake.offer("tripplanner://trip/"))
+    }
+
+    @Test
     fun notificationTargetsOpenTheTripAndLatestWins() {
         val intake = DeepLinkIntake()
         assertTrue(intake.offerTrip("t1", "s1"))

@@ -20,3 +20,6 @@ iosApp/iosApp.xcodeproj/
 iosApp/build/
 iosApp/.build/
 iosApp/Info.plist
+
+# Kotlin/JS build of the schedule engine, produced by ./gradlew :schedule:packageForFunctions
+firebase/functions/vendor/
