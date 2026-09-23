@@ -58,6 +58,9 @@
     "auth": {
       "port": 9099
     },
-    "singleProjectMode": true
+    "singleProjectMode": true,
+    "tasks": {
+      "port": 9499
+    }
   }
 }

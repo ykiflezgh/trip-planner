@@ -5,6 +5,8 @@ import androidx.lifecycle.viewModelScope
 import app.tripplanner.shared.core.model.Trip
 import app.tripplanner.shared.data.AuthRepository
 import app.tripplanner.shared.data.TripRepository
+import app.tripplanner.shared.data.UserRepository
+import app.tripplanner.shared.feature.notifications.PushRegistrar
 import app.tripplanner.shared.platform.SignInCancelledException
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.flow.Flow
@@ -25,12 +27,16 @@ data class TripListUiState(
     val signedIn: Boolean = false,
     val userName: String? = null,
     val signingIn: Boolean = false,
+    /** `users/{uid}.notificationPrefs.push` (design §10). */
+    val pushEnabled: Boolean = true,
     val error: String? = null,
 )
 
 class TripListViewModel(
     private val auth: AuthRepository,
     private val repo: TripRepository,
+    private val users: UserRepository,
+    private val push: PushRegistrar,
 ) : ViewModel() {
 
     private data class Local(val signingIn: Boolean = false, val error: String? = null)
@@ -47,10 +53,12 @@ class TripListViewModel(
             flowOf(TripListUiState(loading = false))
         } else {
             val signedIn = TripListUiState(loading = false, signedIn = true, userName = user.displayName ?: user.email)
-            repo.myTrips(user.uid)
+            val trips = repo.myTrips(user.uid)
                 .map { signedIn.copy(trips = it) }
                 // e.g. PERMISSION_DENIED until firestore.rules are deployed: keep the screen alive.
                 .catch { emit(signedIn.copy(error = it.message ?: "Could not load trips")) }
+            val prefs = users.prefs(user.uid).map { it.push }.catch { emit(true) }
+            combine(trips, prefs) { t, p -> t.copy(pushEnabled = p) }
         }
     }
 
@@ -96,7 +104,25 @@ class TripListViewModel(
      * - **Space:** O(1).
      */
     fun signOut() {
-        viewModelScope.launch { runCatching { auth.signOut() } }
+        viewModelScope.launch {
+            push.prepareSignOut() // drop this device's token first (design §10)
+            runCatching { auth.signOut() }
+        }
+    }
+
+    /**
+     * Global push switch (design §10); Functions read it at fan-out time.
+     *
+     * Complexity:
+     * - **Time:** O(1) merge write.
+     * - **Space:** O(1).
+     */
+    fun setPushEnabled(enabled: Boolean) {
+        val uid = auth.currentUser?.uid ?: return
+        viewModelScope.launch {
+            runCatching { users.setPushEnabled(uid, enabled) }
+                .onFailure { local.value = local.value.copy(error = it.message ?: "Could not update notifications") }
+        }
     }
 
     /**

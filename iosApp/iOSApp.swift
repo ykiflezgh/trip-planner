@@ -6,6 +6,9 @@ import GoogleMaps
 
 @main
 struct iOSApp: App {
+    // Push notifications need UIApplicationDelegate callbacks (design §10, PushBridge.swift).
+    @UIApplicationDelegateAdaptor(AppDelegate.self) private var appDelegate
+
     init() {
         // GoogleService-Info.plist is gitignored; fetch it with the Firebase CLI (docs/phase0-spike.md).
         FirebaseApp.configure()
@@ -13,7 +16,7 @@ struct iOSApp: App {
         let mapsKey = Bundle.main.object(forInfoDictionaryKey: "MAPS_API_KEY") as? String ?? ""
         GMSServices.provideAPIKey(mapsKey)
         let appLinkHost = Bundle.main.object(forInfoDictionaryKey: "APP_LINK_HOST") as? String ?? ""
-        IosModuleKt.doInitKoin(placesApiKey: mapsKey, googleSignIn: GoogleSignInBridgeImpl(), appLinkHost: appLinkHost)
+        IosModuleKt.doInitKoin(placesApiKey: mapsKey, googleSignIn: GoogleSignInBridgeImpl(), push: PushBridgeImpl(), appLinkHost: appLinkHost)
     }
     var body: some Scene {
         WindowGroup {

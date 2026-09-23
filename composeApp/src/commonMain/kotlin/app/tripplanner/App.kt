@@ -10,7 +10,9 @@ import androidx.navigation.compose.composable
 import androidx.navigation.compose.rememberNavController
 import androidx.navigation.toRoute
 import app.tripplanner.shared.data.AuthRepository
-import app.tripplanner.shared.feature.invites.InviteIntake
+import app.tripplanner.shared.feature.links.DeepLink
+import app.tripplanner.shared.feature.links.DeepLinkIntake
+import app.tripplanner.ui.ActivityFeedScreen
 import app.tripplanner.ui.JoinTripScreen
 import app.tripplanner.ui.NewTripScreen
 import app.tripplanner.ui.TripDetailScreen
@@ -24,33 +26,44 @@ object TripListRoute
 @Serializable
 object NewTripRoute
 
+/** [name] may be blank when opened from a notification; the screen then uses the live trip name. */
 @Serializable
-data class TripDetailRoute(val tripId: String, val name: String)
+data class TripDetailRoute(val tripId: String, val name: String, val focusStopId: String? = null)
+
+@Serializable
+data class ActivityRoute(val tripId: String, val name: String)
 
 @Serializable
 data class JoinRoute(val code: String)
 
 /**
- * Trip list (+ Google sign-in) -> new trip form / trip detail (map). Day tabs, drag reorder
- * and Places search are the remaining Phase 1 items (see planning/).
+ * Trip list (+ Google sign-in) -> new trip form / join / trip detail (map, day tabs) -> activity feed.
  *
  * Complexity:
  * - **Recomposition Time:** O(1) - the NavHost composes exactly one destination; per-screen
  *   costs are documented on [TripListScreen] and [TripDetailScreen].
- * - **Composition Memory:** O(B) where B is the back-stack depth (at most 2 entries here).
+ * - **Composition Memory:** O(B) where B is the back-stack depth (at most 3 entries here).
  */
 @Composable
 fun App() {
     MaterialTheme {
         val nav = rememberNavController()
-        // Invite links (App Link / Universal Link / "Join a trip"): redeem once signed in (design §8.2).
-        val intake: InviteIntake = koinInject()
+        // External entry points act once signed in: invite links redeem (design §8.2),
+        // notification taps open the trip at the changed stop (design §10).
+        val intake: DeepLinkIntake = koinInject()
         val auth: AuthRepository = koinInject()
-        val pendingCode by intake.pendingCode.collectAsState()
+        val pending by intake.pending.collectAsState()
         val user by auth.user.collectAsState(initial = auth.currentUser)
-        LaunchedEffect(pendingCode, user?.uid) {
-            if (pendingCode != null && user != null) {
-                intake.consume()?.let { code -> nav.navigate(JoinRoute(code)) { launchSingleTop = true } }
+        LaunchedEffect(pending, user?.uid) {
+            if (pending != null && user != null) {
+                when (val link = intake.consume()) {
+                    is DeepLink.Join -> nav.navigate(JoinRoute(link.code)) { launchSingleTop = true }
+                    is DeepLink.OpenTrip -> nav.navigate(TripDetailRoute(link.tripId, name = "", focusStopId = link.stopId)) {
+                        popUpTo<TripListRoute>()
+                        launchSingleTop = true
+                    }
+                    null -> Unit
+                }
             }
         }
         NavHost(nav, startDestination = TripListRoute) {
@@ -79,7 +92,17 @@ fun App() {
             }
             composable<TripDetailRoute> { entry ->
                 val route = entry.toRoute<TripDetailRoute>()
-                TripDetailScreen(tripId = route.tripId, name = route.name, onBack = { nav.popBackStack() })
+                TripDetailScreen(
+                    tripId = route.tripId,
+                    name = route.name,
+                    focusStopId = route.focusStopId,
+                    onOpenActivity = { title -> nav.navigate(ActivityRoute(route.tripId, title)) },
+                    onBack = { if (!nav.popBackStack()) nav.navigate(TripListRoute) { popUpTo<TripListRoute>() } },
+                )
+            }
+            composable<ActivityRoute> { entry ->
+                val route = entry.toRoute<ActivityRoute>()
+                ActivityFeedScreen(tripId = route.tripId, name = route.name, onBack = { nav.popBackStack() })
             }
         }
     }

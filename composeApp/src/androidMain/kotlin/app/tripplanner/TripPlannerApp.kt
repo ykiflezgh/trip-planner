@@ -3,6 +3,7 @@ package app.tripplanner
 import android.app.Application
 import android.content.pm.PackageManager
 import app.tripplanner.auth.CurrentActivity
+import app.tripplanner.push.TripMessagingService
 import app.tripplanner.shared.di.AppConfig
 import app.tripplanner.shared.di.sharedModule
 import org.koin.android.ext.koin.androidContext
@@ -25,6 +26,7 @@ class TripPlannerApp : Application() {
             modules(sharedModule(placesApiKey = metaData("com.google.android.geo.API_KEY"), AppConfig(appLinkHost = metaData("app.tripplanner.APP_LINK_HOST"))), androidModule())
         }
         registerActivityLifecycleCallbacks(get<CurrentActivity>())
+        TripMessagingService.ensureChannel(this)
     }
 
     private fun metaData(name: String): String =

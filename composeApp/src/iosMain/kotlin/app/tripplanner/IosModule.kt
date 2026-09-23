@@ -3,7 +3,10 @@ package app.tripplanner
 import app.tripplanner.net.IosConnectivityMonitor
 import app.tripplanner.share.IosShareSheet
 import app.tripplanner.shared.di.AppConfig
-import app.tripplanner.shared.feature.invites.InviteIntake
+import app.tripplanner.push.IosPushTokenProvider
+import app.tripplanner.push.PushBridge
+import app.tripplanner.shared.feature.links.DeepLinkIntake
+import app.tripplanner.shared.platform.PushTokenProvider
 import app.tripplanner.shared.platform.ShareSheet
 import org.koin.mp.KoinPlatform
 import app.tripplanner.shared.di.sharedModule
@@ -34,10 +37,11 @@ interface GoogleSignInBridge {
  * - **Time:** O(1) module definition.
  * - **Space:** O(1).
  */
-fun iosModule(googleSignIn: GoogleSignInBridge) = module {
+fun iosModule(googleSignIn: GoogleSignInBridge, push: PushBridge) = module {
     single<GoogleSignInProvider> { IosGoogleSignInProvider(googleSignIn) }
     single<ConnectivityMonitor> { IosConnectivityMonitor() }
     single<ShareSheet> { IosShareSheet() }
+    single<PushTokenProvider> { IosPushTokenProvider(push) }
 }
 
 /**
@@ -49,9 +53,9 @@ fun iosModule(googleSignIn: GoogleSignInBridge) = module {
  * - **Time:** O(D) where D is the number of Koin definitions registered.
  * - **Space:** O(D) for the definition registry.
  */
-fun initKoin(placesApiKey: String, googleSignIn: GoogleSignInBridge, appLinkHost: String) {
+fun initKoin(placesApiKey: String, googleSignIn: GoogleSignInBridge, push: PushBridge, appLinkHost: String) {
     val config = if (appLinkHost.isBlank()) AppConfig() else AppConfig(appLinkHost = appLinkHost)
-    startKoin { modules(sharedModule(placesApiKey, config), iosModule(googleSignIn)) }
+    startKoin { modules(sharedModule(placesApiKey, config), iosModule(googleSignIn, push)) }
 }
 
 /**
@@ -62,7 +66,25 @@ fun initKoin(placesApiKey: String, googleSignIn: GoogleSignInBridge, appLinkHost
  * - **Time:** O(N) for an N-character URL.
  * - **Space:** O(1).
  */
-fun offerInviteUrl(url: String): Boolean = KoinPlatform.getKoin().get<InviteIntake>().offer(url)
+fun offerInviteUrl(url: String): Boolean = KoinPlatform.getKoin().get<DeepLinkIntake>().offer(url)
+
+/**
+ * Notification tap (design §10): the APNs payload carries the trip and stop ids.
+ *
+ * Complexity:
+ * - **Time:** O(1).
+ * - **Space:** O(1).
+ */
+fun offerTripLink(tripId: String, stopId: String?): Boolean = KoinPlatform.getKoin().get<DeepLinkIntake>().offerTrip(tripId, stopId)
+
+/**
+ * FCM token from `MessagingDelegate` (design §6.4); `null` when Firebase Messaging drops it.
+ *
+ * Complexity:
+ * - **Time:** O(1).
+ * - **Space:** O(1).
+ */
+fun setPushToken(token: String?) = IosPushTokenProvider.setToken(token)
 
 /**
  * Adapts the callback-style Swift bridge to the suspend boundary the shared code expects.

@@ -1,6 +1,13 @@
 package app.tripplanner.shared.di
 
+import app.tripplanner.shared.data.ActivityRepository
 import app.tripplanner.shared.data.AuthRepository
+import app.tripplanner.shared.data.FirestoreActivityRepository
+import app.tripplanner.shared.data.FirestoreUserRepository
+import app.tripplanner.shared.data.UserRepository
+import app.tripplanner.shared.feature.activity.ActivityFeedViewModel
+import app.tripplanner.shared.feature.links.DeepLinkIntake
+import app.tripplanner.shared.feature.notifications.PushRegistrar
 import app.tripplanner.shared.data.CalendarApi
 import app.tripplanner.shared.data.FirestoreNetwork
 import app.tripplanner.shared.data.FirestoreNetworkSync
@@ -9,7 +16,6 @@ import app.tripplanner.shared.data.FirestoreTripRepository
 import app.tripplanner.shared.data.PlacesApi
 import app.tripplanner.shared.data.PlanningFunctions
 import app.tripplanner.shared.data.TripRepository
-import app.tripplanner.shared.feature.invites.InviteIntake
 import app.tripplanner.shared.feature.invites.JoinTripViewModel
 import app.tripplanner.shared.feature.stops.AddStopViewModel
 import app.tripplanner.shared.feature.trips.NewTripViewModel
@@ -50,10 +56,15 @@ fun sharedModule(placesApiKey: String, config: AppConfig = AppConfig()) = module
     single { PlacesApi(get(), placesApiKey) }
     single { CalendarApi(get()) }
     single { PlanningFunctions() }
-    single { InviteIntake() }
-    viewModel { TripListViewModel(get(), get()) }
+    single { DeepLinkIntake() }
+    single<UserRepository> { FirestoreUserRepository() }
+    single<ActivityRepository> { FirestoreActivityRepository() }
+    // Process-lifetime: registers this device's FCM token for the signed-in user (design §10).
+    single(createdAtStart = true) { PushRegistrar(get(), get(), get()).also { it.start() } }
+    viewModel { TripListViewModel(get(), get(), get(), get()) }
     viewModel { NewTripViewModel(get(), get()) }
-    viewModel { (tripId: String) -> TripDetailViewModel(tripId, get(), get(), get(), get(), get(), get()) }
+    viewModel { (tripId: String) -> TripDetailViewModel(tripId, get(), get(), get(), get(), get(), get(), get()) }
+    viewModel { (tripId: String) -> ActivityFeedViewModel(tripId, get(), get()) }
     viewModel { (code: String) -> JoinTripViewModel(code, get(), get()) }
     viewModel { (tripId: String) -> AddStopViewModel(tripId, get(), get(), get(), get()) }
 }

@@ -57,6 +57,9 @@ kotlin {
             implementation(libs.androidx.credentials)
             implementation(libs.androidx.credentials.play.services)
             implementation(libs.googleid)
+            implementation(libs.androidx.core.ktx)
+            implementation(libs.firebase.messaging) // version via shared's Firebase BoM
+            implementation(libs.kotlinx.coroutines.play.services)
         }
     }
 }

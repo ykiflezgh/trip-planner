@@ -14,6 +14,9 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.DropdownMenu
+import androidx.compose.material3.DropdownMenuItem
+import androidx.compose.material3.Switch
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.ExtendedFloatingActionButton
 import androidx.compose.material3.ListItem
@@ -36,7 +39,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import app.tripplanner.shared.core.model.Trip
-import app.tripplanner.shared.feature.invites.InviteIntake
+import app.tripplanner.shared.feature.links.DeepLinkIntake
 import app.tripplanner.shared.feature.trips.TripListViewModel
 import org.koin.compose.koinInject
 import org.koin.compose.viewmodel.koinViewModel
@@ -56,7 +59,8 @@ fun TripListScreen(onOpenTrip: (Trip) -> Unit, onNewTrip: () -> Unit) {
     val vm: TripListViewModel = koinViewModel()
     val state by vm.state.collectAsStateWithLifecycle()
     val snackbar = remember { SnackbarHostState() }
-    val intake: InviteIntake = koinInject()
+    val intake: DeepLinkIntake = koinInject()
+    var showMenu by remember { mutableStateOf(false) }
     var showJoin by remember { mutableStateOf(false) }
     var joinInput by remember { mutableStateOf("") }
 
@@ -71,7 +75,16 @@ fun TripListScreen(onOpenTrip: (Trip) -> Unit, onNewTrip: () -> Unit) {
                 actions = {
                     if (state.signedIn) {
                         TextButton(onClick = { joinInput = ""; showJoin = true }) { Text("Join") }
-                        TextButton(onClick = vm::signOut) { Text("Sign out") }
+                        // material-icons is not in commonMain; text glyph for the overflow menu.
+                        TextButton(onClick = { showMenu = true }) { Text("\u22ee", style = MaterialTheme.typography.titleLarge) }
+                        DropdownMenu(expanded = showMenu, onDismissRequest = { showMenu = false }) {
+                            DropdownMenuItem(
+                                text = { Text("Notifications") },
+                                trailingIcon = { Switch(checked = state.pushEnabled, onCheckedChange = null) },
+                                onClick = { vm.setPushEnabled(!state.pushEnabled) },
+                            )
+                            DropdownMenuItem(text = { Text("Sign out") }, onClick = { showMenu = false; vm.signOut() })
+                        }
                     }
                 },
             )

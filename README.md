@@ -86,8 +86,24 @@ landing page (`/join/{code}` with an `intent://` fallback on Android) and `asset
 carries the debug signing SHA-256 - Android reports the domain as verified. Cloud Functions are
 deployed to the dev project (Blaze); `ROUTES_API_KEY` / `GEMINI_API_KEY` hold placeholder values
 until those features land.
-Still unverified: the Functions/Places/Calendar call shapes in `shared/data/`. Cloud Functions in `firebase/functions/` are compile-shaped
-TypeScript with TODOs where Phase 2/3 work lands (Routes, Gemini, burst collapsing).
+**Activity feed + FCM fan-out (design §10):** every stop write is classified by `onStopWritten`
+(added / moved / edited / removed; the actor comes from the write's auth context, falling back to
+`updatedBy`/`addedBy`) into a structured `activity` event that `onActivityCreated` fans out to the
+other members' devices, honouring `users/{uid}.notificationPrefs` (global **Notifications** switch in
+the trip list menu, per-trip **Mute** in the trip menu). Bursts collapse per (trip, actor): the
+first two changes within 60 s push at once, later ones are held and a Cloud Tasks flush
+(`flushNotifyDigest`) sends one "A made N changes" digest at the window's end; the client keys
+tray entries by trip+actor so the digest replaces the singles. Tokens FCM reports as dead are
+pruned (`burst.ts`, unit-tested with `npm test`); the client keeps at most five per user.
+Android: `TripMessagingService` words data messages on the device (`NotificationText`, shared with
+the **Activity** screen) and a tap deep-links through `DeepLinkIntake` to the trip with the stop
+selected. iOS: `PushBridge.swift` (APNs -> Firebase Messaging token, permission, tap) and the
+same facts as `loc-key`/`loc-args` resolved from `en.lproj/Localizable.strings`; delivery to iOS
+needs the APNs auth key uploaded in Firebase Console -> Cloud Messaging. The dev project sets
+`NOTIFY_ACTOR_DEBUG=true` (`functions/.env.tripplanner-dev-fe0a4`) so a single test account sees
+its own pushes; never set it for prod.
+Still unverified: the Places/Calendar call shapes in `shared/data/`. Cloud Functions in `firebase/functions/` still carry TODOs for
+Routes (travel times) and Gemini.
 
 ## Layout
 

@@ -21,7 +21,7 @@ targets:
     platform: iOS
     sources:
       - path: .
-        excludes: ["project.yml", "README.md", "Info.plist", "*.xcodeproj", "build", ".build"]
+        excludes: ["project.yml", "README.md", "Info.plist", "*.entitlements", "*.xcodeproj", "build", ".build"]
     info:
       path: Info.plist
       properties:
@@ -37,6 +37,9 @@ targets:
         MAPS_API_KEY: $(MAPS_API_KEY)
         # Hosting domain for invite links (design §8.2).
         APP_LINK_HOST: $(APP_LINK_HOST)
+        # Push (design §10): APNs token is forwarded to Firebase Messaging by hand in PushBridge.swift.
+        FirebaseAppDelegateProxyEnabled: false
+        UIBackgroundModes: [remote-notification]
         # Custom scheme used by the hosting landing page until Universal Links are configured
         # (the post-build script appends the Google Sign-In scheme as a second entry).
         CFBundleURLTypes:
@@ -52,6 +55,7 @@ targets:
         MAPS_API_KEY: ""
         APP_LINK_HOST: tripplanner-dev-fe0a4.web.app
         CODE_SIGN_STYLE: Automatic
+        CODE_SIGN_ENTITLEMENTS: iosApp.entitlements
         # Simulator builds are ad-hoc signed so the app can use the keychain (Firebase Auth
         # persists the user there; an unsigned build fails with FIRAuthErrorDomain 17995).
         "CODE_SIGN_IDENTITY[sdk=iphonesimulator*]": "-"
@@ -68,6 +72,8 @@ targets:
         product: FirebaseFunctions
       - package: Firebase
         product: FirebaseRemoteConfig
+      - package: Firebase
+        product: FirebaseMessaging
       - package: GoogleSignIn
         product: GoogleSignIn
       - package: GoogleMaps

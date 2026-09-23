@@ -35,7 +35,8 @@ interface TripRepository {
     fun createTrip(trip: Trip): String
     /** Writes the stop with a fresh fractional key between the neighbours; returns the new id immediately. */
     fun addStop(tripId: String, stop: Stop, afterOrder: String?, beforeOrder: String?): String
-    fun moveStop(tripId: String, stopId: String, day: Int, afterOrder: String?, beforeOrder: String?)
+    /** [updatedBy] is the acting uid, the Function's fallback actor when the write's auth context is missing (design §10). */
+    fun moveStop(tripId: String, stopId: String, day: Int, afterOrder: String?, beforeOrder: String?, updatedBy: String)
     fun deleteStop(tripId: String, stopId: String)
 }
 
@@ -166,13 +167,13 @@ class FirestoreTripRepository(
      * - **Time:** O(L) for index calculation + O(1) single-document field update.
      * - **Space:** O(L) auxiliary space for the index key.
      */
-    override fun moveStop(tripId: String, stopId: String, day: Int, afterOrder: String?, beforeOrder: String?) {
+    override fun moveStop(tripId: String, stopId: String, day: Int, afterOrder: String?, beforeOrder: String?, updatedBy: String) {
         val order = FractionalIndex.between(afterOrder, beforeOrder)
         // NOT_FOUND here means another member deleted the stop: the next snapshot drops the local
         // change and the failure surfaces through [writeFailures] (design §7).
         write("move stop") {
             db.collection("trips").document(tripId).collection("stops").document(stopId)
-                .update("day" to day, "order" to order, "updatedAt" to Timestamp.ServerTimestamp)
+                .update("day" to day, "order" to order, "updatedBy" to updatedBy, "updatedAt" to Timestamp.ServerTimestamp)
         }
     }
 

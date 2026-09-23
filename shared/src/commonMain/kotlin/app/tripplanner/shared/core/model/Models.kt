@@ -36,6 +36,8 @@ data class Stop(
     val durationMin: Int = 60,
     val notes: String = "",
     val addedBy: String = "",
+    /** Last editor (move/edit); the Function's auth context is the primary actor source, this is the fallback (design §10). */
+    val updatedBy: String = "",
     val addedAt: BaseTimestamp? = null,        // server timestamps (§7)
     val updatedAt: BaseTimestamp? = null,
     /** When name/address/coords were fetched from Places: only placeId + coordinates are durable, the rest is a cache to refresh within Google's limits (§7). */
@@ -53,11 +55,36 @@ data class TravelLeg(
     val meters: Int,
 )
 
+/**
+ * One feed entry, written only by Functions (design §7, §10). Structured fields let the client
+ * render localized text; [summary] is the server's English fallback.
+ */
 @Serializable
 data class ActivityEvent(
     val id: String = "",
-    val type: String = "",                // stop_added | stop_moved | stop_removed | member_joined ...
+    val type: String = "",                // stop_added | stop_moved | stop_edited | stop_removed | member_joined
     val actorId: String = "",
+    val actorName: String = "",
     val stopId: String? = null,
+    val stopName: String = "",
+    val day: Int = 0,                     // 0-based; for stop_moved the destination day
+    val fromDay: Int? = null,             // stop_moved only
     val summary: String = "",
+    val createdAt: BaseTimestamp? = null,
+)
+
+/** `users/{uid}.notificationPrefs` (design §7, §10). Absent fields mean "on". */
+@Serializable
+data class NotificationPrefs(
+    val push: Boolean = true,
+    val mutedTripIds: List<String> = emptyList(),
+)
+
+/** `users/{uid}` — profile the Functions denormalize into events, FCM tokens, prefs (design §7). */
+@Serializable
+data class UserProfile(
+    val displayName: String = "",
+    val photoUrl: String = "",
+    val fcmTokens: List<String> = emptyList(),
+    val notificationPrefs: NotificationPrefs = NotificationPrefs(),
 )

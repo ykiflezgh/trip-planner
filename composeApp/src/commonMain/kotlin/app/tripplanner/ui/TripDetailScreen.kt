@@ -15,6 +15,8 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.DropdownMenu
+import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.ExtendedFloatingActionButton
 import androidx.compose.material3.FilterChip
@@ -72,9 +74,13 @@ import sh.calvin.reorderable.rememberReorderableLazyListState
  */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun TripDetailScreen(tripId: String, name: String, onBack: () -> Unit) {
+fun TripDetailScreen(tripId: String, name: String, focusStopId: String? = null, onOpenActivity: (String) -> Unit, onBack: () -> Unit) {
     val vm: TripDetailViewModel = koinViewModel(key = tripId, parameters = { parametersOf(tripId) })
     val state by vm.state.collectAsStateWithLifecycle()
+    val title = state.trip?.name?.takeIf { it.isNotBlank() } ?: name
+    var showMenu by remember { mutableStateOf(false) }
+    // Notification deep link (design §10): select the changed stop once it is loaded.
+    LaunchedEffect(focusStopId) { focusStopId?.let(vm::focusStop) }
     val dayStops = state.stopsForSelectedDay
     val selected = dayStops.firstOrNull { it.id == state.selectedStopId }
         ?: state.stopsByDay.values.flatten().firstOrNull { it.id == state.selectedStopId }
@@ -95,7 +101,7 @@ fun TripDetailScreen(tripId: String, name: String, onBack: () -> Unit) {
     LaunchedEffect(state.shareUrl) {
         state.shareUrl?.let { url ->
             vm.consumeShare()
-            shareSheet.share("Join my trip \"$name\" on Trip Planner: $url", "Invite to $name")
+            shareSheet.share("Join my trip \"$title\" on Trip Planner: $url", "Invite to $title")
         }
     }
     // Pending for a while although online: the connection is probably stalled - offer a kick.
@@ -111,12 +117,20 @@ fun TripDetailScreen(tripId: String, name: String, onBack: () -> Unit) {
     Scaffold(
         topBar = {
             TopAppBar(
-                title = { Text(name) },
+                title = { Text(title) },
                 // material-icons is not in commonMain (Android only gets it transitively); text arrow for now.
                 navigationIcon = { TextButton(onClick = onBack) { Text("←", style = MaterialTheme.typography.titleLarge) } },
                 actions = {
                     if (state.isOwner) {
                         TextButton(onClick = vm::share, enabled = !state.sharing && state.online) { Text(if (state.sharing) "Sharing\u2026" else "Share") }
+                    }
+                    TextButton(onClick = { showMenu = true }) { Text("\u22ee", style = MaterialTheme.typography.titleLarge) }
+                    DropdownMenu(expanded = showMenu, onDismissRequest = { showMenu = false }) {
+                        DropdownMenuItem(text = { Text("Activity") }, onClick = { showMenu = false; onOpenActivity(title) })
+                        DropdownMenuItem(
+                            text = { Text(if (state.muted) "Unmute notifications" else "Mute notifications") },
+                            onClick = { showMenu = false; vm.setMuted(!state.muted) },
+                        )
                     }
                 },
             )

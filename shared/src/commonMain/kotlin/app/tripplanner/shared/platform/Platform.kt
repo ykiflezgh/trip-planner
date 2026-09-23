@@ -25,9 +25,15 @@ interface GoogleAuthorizer {
     suspend fun requestAccessToken(scopes: List<String>): String
 }
 
+/**
+ * FCM registration token from the platform messaging SDK (design §6.4, §10). Android:
+ * `FirebaseMessagingService.onNewToken`; iOS: APNs token -> `Messaging.messaging()` token.
+ */
 interface PushTokenProvider {
-    /** Current FCM registration token, refreshed by platform callbacks. */
-    suspend fun currentToken(): String?
+    /** Current token, `null` until the SDK delivers one; re-emits on refresh. */
+    val token: kotlinx.coroutines.flow.StateFlow<String?>
+    /** Shows the OS notification-permission prompt if needed; true when notifications may be shown. */
+    suspend fun requestPermission(): Boolean
 }
 
 /**

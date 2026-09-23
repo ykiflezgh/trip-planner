@@ -10,9 +10,14 @@ import app.tripplanner.shared.data.PlanningFunctions
 import app.tripplanner.shared.di.AppConfig
 import app.tripplanner.shared.feature.invites.InviteLinks
 import app.tripplanner.shared.data.TripRepository
+import app.tripplanner.shared.data.UserRepository
 import app.tripplanner.shared.platform.ConnectivityMonitor
 import co.touchlab.kermit.Logger
+import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.flow.flatMapLatest
+import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.catch
@@ -20,6 +25,7 @@ import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withTimeoutOrNull
 
 data class TripDetailUiState(
     val loading: Boolean = true,
@@ -34,6 +40,8 @@ data class TripDetailUiState(
     /** The signed-in user owns this trip: only owners can share it (design §8.2). */
     val isOwner: Boolean = false,
     val sharing: Boolean = false,
+    /** This user muted push for this trip (`users/{uid}.notificationPrefs.mutedTripIds`, design §10). */
+    val muted: Boolean = false,
     /** One-shot: the invite link to hand to the platform share sheet; the screen calls [TripDetailViewModel.consumeShare]. */
     val shareUrl: String? = null,
 ) {
@@ -53,6 +61,7 @@ class TripDetailViewModel(
     private val functions: PlanningFunctions,
     private val auth: AuthRepository,
     private val config: AppConfig,
+    private val users: UserRepository,
 ) : ViewModel() {
 
     private val log = Logger.withTag("TripDetail")
@@ -65,6 +74,8 @@ class TripDetailViewModel(
         .map { stops -> TripDetailUiState(loading = false, stopsByDay = stops.groupBy { it.day }) }
         .catch { emit(TripDetailUiState(loading = false, error = it.message ?: "Could not load stops")) }
     private val trip = repo.trip(tripId).catch { emit(null) }
+    @OptIn(ExperimentalCoroutinesApi::class)
+    private val muted = auth.user.flatMapLatest { u -> if (u == null) flowOf(false) else users.prefs(u.uid).map { tripId in it.mutedTripIds } }.catch { emit(false) }
 
     init {
         // Writes apply locally at once; rejections arrive here later (design §7, §9).
@@ -85,9 +96,9 @@ class TripDetailViewModel(
      */
     val state: StateFlow<TripDetailUiState> =
         combine(
-            combine(stops, trip, connectivity.online) { s, t, online ->
+            combine(stops, trip, connectivity.online, muted) { s, t, online, m ->
                 val uid = auth.currentUser?.uid
-                s.copy(trip = t, online = online, isOwner = uid != null && t?.roles?.get(uid) == "owner")
+                s.copy(trip = t, online = online, muted = m, isOwner = uid != null && t?.roles?.get(uid) == "owner")
             },
             selectedStopId, selectedDay, message, share,
         ) { s, sel, day, msg, sh -> s.copy(selectedStopId = sel, selectedDay = day, message = msg, sharing = sh.first, shareUrl = sh.second) }
@@ -103,6 +114,24 @@ class TripDetailViewModel(
     fun selectStop(stopId: String?) {
         log.i { "selectStop($stopId)" }
         selectedStopId.value = stopId
+    }
+
+    /**
+     * Notification deep link (design §10): once the stops arrive, show the stop's day and open it.
+     * Gives up quietly if the stop is gone (removed since the notification was sent).
+     *
+     * Complexity:
+     * - **Time:** O(S) to locate the stop among S stops on the first snapshot that has it.
+     * - **Space:** O(1).
+     */
+    fun focusStop(stopId: String) {
+        viewModelScope.launch {
+            val stop = withTimeoutOrNull(FOCUS_TIMEOUT_MS) {
+                state.map { s -> s.stopsByDay.values.asSequence().flatten().firstOrNull { it.id == stopId } }.first { it != null }
+            } ?: return@launch
+            selectedDay.value = stop.day
+            selectedStopId.value = stop.id
+        }
     }
 
     /**
@@ -124,7 +153,7 @@ class TripDetailViewModel(
      * - **Space:** O(1) auxiliary heap space.
      */
     fun moveStop(stopId: String, day: Int, afterOrder: String?, beforeOrder: String?) {
-        repo.moveStop(tripId, stopId, day, afterOrder, beforeOrder)
+        repo.moveStop(tripId, stopId, day, afterOrder, beforeOrder, updatedBy = auth.currentUser?.uid.orEmpty())
     }
 
     /**
@@ -181,6 +210,21 @@ class TripDetailViewModel(
     }
 
     /**
+     * Per-trip mute (design §10); the Function honors it on the next fan-out.
+     *
+     * Complexity:
+     * - **Time:** O(1) merge write.
+     * - **Space:** O(1).
+     */
+    fun setMuted(muted: Boolean) {
+        val uid = auth.currentUser?.uid ?: return
+        viewModelScope.launch {
+            runCatching { users.setTripMuted(uid, tripId, muted) }
+                .onFailure { message.value = it.message ?: "Could not update notifications" }
+        }
+    }
+
+    /**
      * "Still syncing" retry: forces Firestore to drop and re-open its connection.
      *
      * Complexity:
@@ -197,4 +241,6 @@ class TripDetailViewModel(
     fun consumeMessage() {
         message.value = null
     }
+
+    companion object { const val FOCUS_TIMEOUT_MS = 10_000L }
 }

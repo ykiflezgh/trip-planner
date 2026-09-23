@@ -29,6 +29,13 @@
                 <data android:scheme="https" android:host="${APP_LINK_HOST}" android:pathPrefix="/join" />
             </intent-filter>
         </activity>
-        <!-- TODO Phase 2: FirebaseMessagingService for FCM tokens (design SS6.4) -->
+        <!-- FCM: token refresh + data messages rendered as local notifications (design §6.4, §10) -->
+        <service
+            android:name=".push.TripMessagingService"
+            android:exported="false">
+            <intent-filter>
+                <action android:name="com.google.firebase.MESSAGING_EVENT" />
+            </intent-filter>
+        </service>
     </application>
 </manifest>
