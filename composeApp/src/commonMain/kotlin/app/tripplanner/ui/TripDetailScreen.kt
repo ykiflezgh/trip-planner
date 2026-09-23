@@ -50,7 +50,9 @@ import app.tripplanner.shared.core.model.Trip
 import app.tripplanner.shared.feature.stops.StopReorder
 import app.tripplanner.shared.feature.trips.TripDays
 import app.tripplanner.shared.feature.trips.TripDetailViewModel
+import app.tripplanner.shared.platform.ShareSheet
 import kotlinx.coroutines.flow.first
+import org.koin.compose.koinInject
 import org.koin.compose.viewmodel.koinViewModel
 import org.koin.core.parameter.parametersOf
 import sh.calvin.reorderable.ReorderableCollectionItemScope
@@ -89,6 +91,13 @@ fun TripDetailScreen(tripId: String, name: String, onBack: () -> Unit) {
     LaunchedEffect(state.message) {
         state.message?.let { snackbar.showSnackbar(it); vm.consumeMessage() }
     }
+    val shareSheet: ShareSheet = koinInject()
+    LaunchedEffect(state.shareUrl) {
+        state.shareUrl?.let { url ->
+            vm.consumeShare()
+            shareSheet.share("Join my trip \"$name\" on Trip Planner: $url", "Invite to $name")
+        }
+    }
     // Pending for a while although online: the connection is probably stalled - offer a kick.
     var staleSync by remember { mutableStateOf(false) }
     LaunchedEffect(state.pendingSync, state.online) {
@@ -105,6 +114,11 @@ fun TripDetailScreen(tripId: String, name: String, onBack: () -> Unit) {
                 title = { Text(name) },
                 // material-icons is not in commonMain (Android only gets it transitively); text arrow for now.
                 navigationIcon = { TextButton(onClick = onBack) { Text("←", style = MaterialTheme.typography.titleLarge) } },
+                actions = {
+                    if (state.isOwner) {
+                        TextButton(onClick = vm::share, enabled = !state.sharing && state.online) { Text(if (state.sharing) "Sharing\u2026" else "Share") }
+                    }
+                },
             )
         },
         floatingActionButton = {

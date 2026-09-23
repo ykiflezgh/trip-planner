@@ -38,5 +38,10 @@ interface ConnectivityMonitor {
     val online: kotlinx.coroutines.flow.StateFlow<Boolean>
 }
 
+/** Platform share sheet for invite links (design §8.2). */
+interface ShareSheet {
+    fun share(text: String, title: String)
+}
+
 /** Thrown by [GoogleSignInProvider.signIn] when the user dismisses the platform UI. */
 class SignInCancelledException : Exception("Sign-in cancelled")

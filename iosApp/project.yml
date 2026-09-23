@@ -35,6 +35,13 @@ targets:
         ITSAppUsesNonExemptEncryption: false
         # Maps/Places key (design §11): set the MAPS_API_KEY build setting, never commit a value.
         MAPS_API_KEY: $(MAPS_API_KEY)
+        # Hosting domain for invite links (design §8.2).
+        APP_LINK_HOST: $(APP_LINK_HOST)
+        # Custom scheme used by the hosting landing page until Universal Links are configured
+        # (the post-build script appends the Google Sign-In scheme as a second entry).
+        CFBundleURLTypes:
+          - CFBundleURLName: app.tripplanner.invite
+            CFBundleURLSchemes: [tripplanner]
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: app.tripplanner
@@ -43,6 +50,7 @@ targets:
         SWIFT_VERSION: "5.0"
         TARGETED_DEVICE_FAMILY: "1"
         MAPS_API_KEY: ""
+        APP_LINK_HOST: tripplanner-dev-fe0a4.web.app
         CODE_SIGN_STYLE: Automatic
         # Simulator builds are ad-hoc signed so the app can use the keychain (Firebase Auth
         # persists the user there; an unsigned build fails with FIRAuthErrorDomain 17995).
@@ -84,11 +92,12 @@ targets:
           PLIST="$TARGET_BUILD_DIR/$INFOPLIST_PATH"
           [ -f "$GSI" ] || { echo "warning: GoogleService-Info.plist missing - sign-in callback not configured"; exit 0; }
           SCHEME=$(/usr/libexec/PlistBuddy -c "Print :REVERSED_CLIENT_ID" "$GSI")
-          /usr/libexec/PlistBuddy -c "Delete :CFBundleURLTypes" "$PLIST" 2>/dev/null || true
-          /usr/libexec/PlistBuddy -c "Add :CFBundleURLTypes array" "$PLIST"
-          /usr/libexec/PlistBuddy -c "Add :CFBundleURLTypes:0 dict" "$PLIST"
-          /usr/libexec/PlistBuddy -c "Add :CFBundleURLTypes:0:CFBundleURLSchemes array" "$PLIST"
-          /usr/libexec/PlistBuddy -c "Add :CFBundleURLTypes:0:CFBundleURLSchemes:0 string $SCHEME" "$PLIST"
+          /usr/libexec/PlistBuddy -c "Print :CFBundleURLTypes" "$PLIST" >/dev/null 2>&1 || /usr/libexec/PlistBuddy -c "Add :CFBundleURLTypes array" "$PLIST"
+          /usr/libexec/PlistBuddy -c "Delete :CFBundleURLTypes:1" "$PLIST" 2>/dev/null || true
+          /usr/libexec/PlistBuddy -c "Add :CFBundleURLTypes:1 dict" "$PLIST"
+          /usr/libexec/PlistBuddy -c "Add :CFBundleURLTypes:1:CFBundleURLName string google-signin" "$PLIST"
+          /usr/libexec/PlistBuddy -c "Add :CFBundleURLTypes:1:CFBundleURLSchemes array" "$PLIST"
+          /usr/libexec/PlistBuddy -c "Add :CFBundleURLTypes:1:CFBundleURLSchemes:0 string $SCHEME" "$PLIST"
           if [ -z "$MAPS_API_KEY" ]; then
             KEY=$(/usr/libexec/PlistBuddy -c "Print :API_KEY" "$GSI")
             /usr/libexec/PlistBuddy -c "Set :MAPS_API_KEY $KEY" "$PLIST"

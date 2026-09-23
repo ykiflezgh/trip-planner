@@ -31,7 +31,8 @@ export const createInvite = onCall({ enforceAppCheck: false /* TODO true */ }, a
   if (!uid || !tripId) throw new HttpsError("unauthenticated", "sign in first");
 
   const trip = await db.doc(`trips/${tripId}`).get();
-  if (trip.get("roles")?.[uid] !== "owner") throw new HttpsError("permission-denied", "owner only");
+  if (!trip.exists) throw new HttpsError("not-found", "This trip no longer exists.");
+  if (trip.get("roles")?.[uid] !== "owner") throw new HttpsError("permission-denied", "Only the trip owner can share it.");
 
   const code = crypto.randomBytes(6).toString("base64url");
   await db.doc(`invites/${code}`).set({
@@ -61,17 +62,25 @@ export const redeemInvite = onCall(async (req) => {
   return db.runTransaction(async (tx) => {
     const inviteRef = db.doc(`invites/${code}`);
     const invite = await tx.get(inviteRef);
-    if (!invite.exists) throw new HttpsError("not-found", "invalid invite");
-    if (invite.get("expiresAt").toDate() < new Date()) throw new HttpsError("failed-precondition", "expired");
-    if (invite.get("uses") >= invite.get("maxUses")) throw new HttpsError("resource-exhausted", "used up");
-
+    if (!invite.exists) throw new HttpsError("not-found", "This invite link isn't valid.");
     const tripId = invite.get("tripId") as string;
-    tx.update(db.doc(`trips/${tripId}`), {
+    const tripRef = db.doc(`trips/${tripId}`);
+    const trip = await tx.get(tripRef);
+    if (!trip.exists) throw new HttpsError("not-found", "This trip no longer exists.");
+
+    // Already a member (including the owner re-opening their own link): nothing to change.
+    if ((trip.get("memberIds") ?? []).includes(uid)) return { tripId, alreadyMember: true };
+
+    if (invite.get("expiresAt").toDate() < new Date()) throw new HttpsError("failed-precondition", "This invite link has expired.");
+    if (invite.get("uses") >= invite.get("maxUses")) throw new HttpsError("resource-exhausted", "This invite link has been used up.");
+
+    tx.update(tripRef, {
       [`roles.${uid}`]: invite.get("role"),
       memberIds: FieldValue.arrayUnion(uid),
+      updatedAt: FieldValue.serverTimestamp(),
     });
     tx.update(inviteRef, { uses: FieldValue.increment(1) });
-    return { tripId };
+    return { tripId, alreadyMember: false };
   });
 });
 

@@ -1,6 +1,11 @@
 package app.tripplanner
 
 import app.tripplanner.net.IosConnectivityMonitor
+import app.tripplanner.share.IosShareSheet
+import app.tripplanner.shared.di.AppConfig
+import app.tripplanner.shared.feature.invites.InviteIntake
+import app.tripplanner.shared.platform.ShareSheet
+import org.koin.mp.KoinPlatform
 import app.tripplanner.shared.di.sharedModule
 import app.tripplanner.shared.platform.ConnectivityMonitor
 import app.tripplanner.shared.platform.GoogleSignInProvider
@@ -32,6 +37,7 @@ interface GoogleSignInBridge {
 fun iosModule(googleSignIn: GoogleSignInBridge) = module {
     single<GoogleSignInProvider> { IosGoogleSignInProvider(googleSignIn) }
     single<ConnectivityMonitor> { IosConnectivityMonitor() }
+    single<ShareSheet> { IosShareSheet() }
 }
 
 /**
@@ -43,9 +49,20 @@ fun iosModule(googleSignIn: GoogleSignInBridge) = module {
  * - **Time:** O(D) where D is the number of Koin definitions registered.
  * - **Space:** O(D) for the definition registry.
  */
-fun initKoin(placesApiKey: String, googleSignIn: GoogleSignInBridge) {
-    startKoin { modules(sharedModule(placesApiKey), iosModule(googleSignIn)) }
+fun initKoin(placesApiKey: String, googleSignIn: GoogleSignInBridge, appLinkHost: String) {
+    val config = if (appLinkHost.isBlank()) AppConfig() else AppConfig(appLinkHost = appLinkHost)
+    startKoin { modules(sharedModule(placesApiKey, config), iosModule(googleSignIn)) }
 }
+
+/**
+ * Entry for `onOpenURL` / Universal Link continuation (design §8.2). Returns false for URLs
+ * that are not invite links so the caller can pass them on.
+ *
+ * Complexity:
+ * - **Time:** O(N) for an N-character URL.
+ * - **Space:** O(1).
+ */
+fun offerInviteUrl(url: String): Boolean = KoinPlatform.getKoin().get<InviteIntake>().offer(url)
 
 /**
  * Adapts the callback-style Swift bridge to the suspend boundary the shared code expects.

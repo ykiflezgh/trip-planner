@@ -75,6 +75,17 @@ closed for many minutes after an abrupt network change, leaving writes queued); 
 writes are fire-and-forget with rejections on `TripRepository.writeFailures` (surfaced as
 messages), so create-trip / add-stop / reorder never block on the server ack; the trip detail
 shows "Still syncing… Retry" after 30 s pending while online.
+
+**Phase 2 (branch `phase2`) — invites (design §8.2):** the owner's **Share** action calls the
+deployed `createInvite` callable and hands `https://<APP_LINK_HOST>/join/{code}` to the platform
+share sheet; incoming links (Android App Link intent, iOS `tripplanner://join/{code}` scheme or a
+Universal Link once the team ID is in `apple-app-site-association`, or the list's **Join**
+dialog) go through `InviteIntake` -> `JoinRoute` -> `redeemInvite` (idempotent for existing
+members; expired / used-up / invalid codes come back as clear messages). Hosting serves the
+landing page (`/join/{code}` with an `intent://` fallback on Android) and `assetlinks.json`
+carries the debug signing SHA-256 - Android reports the domain as verified. Cloud Functions are
+deployed to the dev project (Blaze); `ROUTES_API_KEY` / `GEMINI_API_KEY` hold placeholder values
+until those features land.
 Still unverified: the Functions/Places/Calendar call shapes in `shared/data/`. Cloud Functions in `firebase/functions/` are compile-shaped
 TypeScript with TODOs where Phase 2/3 work lands (Routes, Gemini, burst collapsing).
 

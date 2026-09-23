@@ -3,6 +3,7 @@ package app.tripplanner
 import android.app.Application
 import android.content.pm.PackageManager
 import app.tripplanner.auth.CurrentActivity
+import app.tripplanner.shared.di.AppConfig
 import app.tripplanner.shared.di.sharedModule
 import org.koin.android.ext.koin.androidContext
 import org.koin.android.ext.koin.androidLogger
@@ -21,12 +22,12 @@ class TripPlannerApp : Application() {
         startKoin {
             androidLogger()
             androidContext(this@TripPlannerApp)
-            modules(sharedModule(placesApiKey = mapsApiKeyFromManifest()), androidModule())
+            modules(sharedModule(placesApiKey = metaData("com.google.android.geo.API_KEY"), AppConfig(appLinkHost = metaData("app.tripplanner.APP_LINK_HOST"))), androidModule())
         }
         registerActivityLifecycleCallbacks(get<CurrentActivity>())
     }
 
-    private fun mapsApiKeyFromManifest(): String =
+    private fun metaData(name: String): String =
         packageManager.getApplicationInfo(packageName, PackageManager.GET_META_DATA)
-            .metaData?.getString("com.google.android.geo.API_KEY").orEmpty()
+            .metaData?.getString(name).orEmpty()
 }

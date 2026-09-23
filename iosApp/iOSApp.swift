@@ -12,14 +12,22 @@ struct iOSApp: App {
         // Maps/Places key lives in Info.plist (MAPS_API_KEY), never in source (design §11).
         let mapsKey = Bundle.main.object(forInfoDictionaryKey: "MAPS_API_KEY") as? String ?? ""
         GMSServices.provideAPIKey(mapsKey)
-        IosModuleKt.doInitKoin(placesApiKey: mapsKey, googleSignIn: GoogleSignInBridgeImpl())
+        let appLinkHost = Bundle.main.object(forInfoDictionaryKey: "APP_LINK_HOST") as? String ?? ""
+        IosModuleKt.doInitKoin(placesApiKey: mapsKey, googleSignIn: GoogleSignInBridgeImpl(), appLinkHost: appLinkHost)
     }
     var body: some Scene {
         WindowGroup {
             ComposeView()
                 .ignoresSafeArea()
-                // Google Sign-In returns through the reversed-client-ID URL scheme.
-                .onOpenURL { GIDSignIn.sharedInstance.handle($0) }
+                // Google Sign-In returns through the reversed-client-ID URL scheme; anything else may
+                // be an invite link (tripplanner://join/{code}, or the https link once Universal
+                // Links are configured - design §8.2).
+                .onOpenURL { url in
+                    if !GIDSignIn.sharedInstance.handle(url) { _ = IosModuleKt.offerInviteUrl(url: url.absoluteString) }
+                }
+                .onContinueUserActivity(NSUserActivityTypeBrowsingWeb) { activity in
+                    if let url = activity.webpageURL { _ = IosModuleKt.offerInviteUrl(url: url.absoluteString) }
+                }
         }
     }
 }

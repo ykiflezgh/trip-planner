@@ -1,8 +1,14 @@
-[{
-  "relation": ["delegate_permission/common.handle_all_urls"],
-  "target": {
-    "namespace": "android_app",
-    "package_name": "app.tripplanner",
-    "sha256_cert_fingerprints": ["REPLACE_WITH_RELEASE_AND_DEBUG_SHA256"]
+[
+  {
+    "relation": [
+      "delegate_permission/common.handle_all_urls"
+    ],
+    "target": {
+      "namespace": "android_app",
+      "package_name": "app.tripplanner",
+      "sha256_cert_fingerprints": [
+        "C7:8E:0F:9C:6C:F6:E0:3C:E5:4E:8A:86:10:E6:F4:9D:30:A8:E8:FF:6D:D8:6A:5C:FC:75:37:76:8F:3F:61:82"
+      ]
+    }
   }
-}]
+]

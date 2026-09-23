@@ -4,7 +4,11 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import app.tripplanner.shared.core.model.Stop
 import app.tripplanner.shared.core.model.Trip
+import app.tripplanner.shared.data.AuthRepository
 import app.tripplanner.shared.data.FirestoreNetworkSync
+import app.tripplanner.shared.data.PlanningFunctions
+import app.tripplanner.shared.di.AppConfig
+import app.tripplanner.shared.feature.invites.InviteLinks
 import app.tripplanner.shared.data.TripRepository
 import app.tripplanner.shared.platform.ConnectivityMonitor
 import co.touchlab.kermit.Logger
@@ -27,6 +31,11 @@ data class TripDetailUiState(
     /** One-shot user message (e.g. a concurrent delete); the screen shows it and calls [TripDetailViewModel.consumeMessage]. */
     val message: String? = null,
     val online: Boolean = true,
+    /** The signed-in user owns this trip: only owners can share it (design §8.2). */
+    val isOwner: Boolean = false,
+    val sharing: Boolean = false,
+    /** One-shot: the invite link to hand to the platform share sheet; the screen calls [TripDetailViewModel.consumeShare]. */
+    val shareUrl: String? = null,
 ) {
     /** True while any local write on this trip awaits the server (design §9). */
     val pendingSync: Boolean get() = trip?.pendingSync == true || stopsByDay.values.any { day -> day.any { it.pendingSync } }
@@ -41,12 +50,16 @@ class TripDetailViewModel(
     private val repo: TripRepository,
     connectivity: ConnectivityMonitor,
     private val networkSync: FirestoreNetworkSync,
+    private val functions: PlanningFunctions,
+    private val auth: AuthRepository,
+    private val config: AppConfig,
 ) : ViewModel() {
 
     private val log = Logger.withTag("TripDetail")
     private val selectedStopId = MutableStateFlow<String?>(null)
     private val selectedDay = MutableStateFlow(0)
     private val message = MutableStateFlow<String?>(null)
+    private val share = MutableStateFlow<Pair<Boolean, String?>>(false to null) // sharing, shareUrl
 
     private val stops = repo.stops(tripId)
         .map { stops -> TripDetailUiState(loading = false, stopsByDay = stops.groupBy { it.day }) }
@@ -72,9 +85,12 @@ class TripDetailViewModel(
      */
     val state: StateFlow<TripDetailUiState> =
         combine(
-            combine(stops, trip, connectivity.online) { s, t, online -> s.copy(trip = t, online = online) },
-            selectedStopId, selectedDay, message,
-        ) { s, sel, day, msg -> s.copy(selectedStopId = sel, selectedDay = day, message = msg) }
+            combine(stops, trip, connectivity.online) { s, t, online ->
+                val uid = auth.currentUser?.uid
+                s.copy(trip = t, online = online, isOwner = uid != null && t?.roles?.get(uid) == "owner")
+            },
+            selectedStopId, selectedDay, message, share,
+        ) { s, sel, day, msg, sh -> s.copy(selectedStopId = sel, selectedDay = day, message = msg, sharing = sh.first, shareUrl = sh.second) }
             .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), TripDetailUiState())
 
     /**
@@ -131,6 +147,37 @@ class TripDetailViewModel(
     fun deleteStop(stopId: String) {
         if (selectedStopId.value == stopId) selectedStopId.value = null
         repo.deleteStop(tripId, stopId)
+    }
+
+    /**
+     * Owner shares the trip: the Function mints an invite code and the app builds the hosted
+     * join link for the platform share sheet (design §8.2).
+     *
+     * Complexity:
+     * - **Time:** O(1) callable round trip.
+     * - **Space:** O(1).
+     */
+    fun share() {
+        if (share.value.first) return
+        viewModelScope.launch {
+            share.value = true to null
+            try {
+                val invite = functions.createInvite(tripId)
+                share.value = false to InviteLinks.joinUrl(config.appLinkHost, invite.code)
+            } catch (e: Exception) {
+                share.value = false to null
+                message.value = e.message ?: "Could not create an invite link"
+            }
+        }
+    }
+
+    /**
+     * Complexity:
+     * - **Time:** O(1).
+     * - **Space:** O(1).
+     */
+    fun consumeShare() {
+        share.value = false to null
     }
 
     /**

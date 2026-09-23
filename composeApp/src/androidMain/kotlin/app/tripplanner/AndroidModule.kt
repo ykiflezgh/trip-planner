@@ -4,6 +4,8 @@ import android.content.Context
 import app.tripplanner.auth.AndroidGoogleSignInProvider
 import app.tripplanner.auth.CurrentActivity
 import app.tripplanner.net.AndroidConnectivityMonitor
+import app.tripplanner.share.AndroidShareSheet
+import app.tripplanner.shared.platform.ShareSheet
 import app.tripplanner.shared.platform.ConnectivityMonitor
 import app.tripplanner.shared.platform.GoogleSignInProvider
 import org.koin.android.ext.koin.androidContext
@@ -13,6 +15,7 @@ import org.koin.dsl.module
 fun androidModule() = module {
     single { CurrentActivity() }
     single<ConnectivityMonitor> { AndroidConnectivityMonitor(androidContext()) }
+    single<ShareSheet> { AndroidShareSheet(get()) }
     single<GoogleSignInProvider> {
         AndroidGoogleSignInProvider(androidContext(), get(), androidContext().defaultWebClientId())
     }
