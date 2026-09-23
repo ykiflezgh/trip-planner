@@ -6,6 +6,7 @@ import app.tripplanner.shared.data.FirestoreTripRepository
 import app.tripplanner.shared.data.PlacesApi
 import app.tripplanner.shared.data.PlanningFunctions
 import app.tripplanner.shared.data.TripRepository
+import app.tripplanner.shared.feature.stops.AddStopViewModel
 import app.tripplanner.shared.feature.trips.NewTripViewModel
 import app.tripplanner.shared.feature.trips.TripDetailViewModel
 import app.tripplanner.shared.feature.trips.TripListViewModel
@@ -22,7 +23,12 @@ import org.koin.dsl.module
  * bound by the platform module started alongside this one (design §6.4).
  */
 fun sharedModule(placesApiKey: String) = module {
-    single { HttpClient { install(ContentNegotiation) { json(Json { ignoreUnknownKeys = true }) } } }
+    single {
+        HttpClient {
+            expectSuccess = true // non-2xx -> exception; PlacesApi turns it into a readable message
+            install(ContentNegotiation) { json(Json { ignoreUnknownKeys = true }) }
+        }
+    }
     single<TripRepository> { FirestoreTripRepository() }
     single { AuthRepository(get()) }
     single { PlacesApi(get(), placesApiKey) }
@@ -31,4 +37,5 @@ fun sharedModule(placesApiKey: String) = module {
     viewModel { TripListViewModel(get(), get()) }
     viewModel { NewTripViewModel(get(), get()) }
     viewModel { (tripId: String) -> TripDetailViewModel(tripId, get()) }
+    viewModel { (tripId: String) -> AddStopViewModel(tripId, get(), get(), get()) }
 }

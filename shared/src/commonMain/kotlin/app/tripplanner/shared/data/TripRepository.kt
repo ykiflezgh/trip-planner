@@ -11,9 +11,12 @@ import kotlinx.coroutines.flow.map
 
 interface TripRepository {
     fun myTrips(uid: String): Flow<List<Trip>>
+    /** One trip document, live; `null` when missing or not readable. */
+    fun trip(tripId: String): Flow<Trip?>
     fun stops(tripId: String): Flow<List<Stop>>
     suspend fun createTrip(trip: Trip): String
-    suspend fun addStop(tripId: String, stop: Stop, afterOrder: String?, beforeOrder: String?)
+    /** Writes the stop with a fresh fractional key between the neighbours; returns the new id. */
+    suspend fun addStop(tripId: String, stop: Stop, afterOrder: String?, beforeOrder: String?): String
     suspend fun moveStop(tripId: String, stopId: String, day: Int, afterOrder: String?, beforeOrder: String?)
     suspend fun deleteStop(tripId: String, stopId: String)
 }
@@ -41,6 +44,17 @@ class FirestoreTripRepository : TripRepository {
             .where { "memberIds" contains uid }
             .snapshots
             .map { qs -> qs.documents.map { it.data<Trip>().copy(id = it.id) } }
+
+    /**
+     * Observes one trip document.
+     *
+     * Complexity:
+     * - **Time:** O(1) per snapshot emission (single document decode).
+     * - **Space:** O(1).
+     */
+    override fun trip(tripId: String): Flow<Trip?> =
+        db.collection("trips").document(tripId).snapshots
+            .map { snap -> if (snap.exists) snap.data<Trip>().copy(id = snap.id) else null }
 
     /**
      * Observes real-time stops for [tripId] sorted by day and fractional index order.
@@ -77,9 +91,18 @@ class FirestoreTripRepository : TripRepository {
      * - **Time:** O(L) where L is the fractional index key length (effectively O(1)) + O(1) document write.
      * - **Space:** O(L) auxiliary space for key generation.
      */
-    override suspend fun addStop(tripId: String, stop: Stop, afterOrder: String?, beforeOrder: String?) {
+    override suspend fun addStop(tripId: String, stop: Stop, afterOrder: String?, beforeOrder: String?): String {
         val doc = db.collection("trips").document(tripId).collection("stops").document
-        doc.set(stop.copy(id = doc.id, order = FractionalIndex.between(afterOrder, beforeOrder)))
+        doc.set(
+            stop.copy(
+                id = doc.id,
+                order = FractionalIndex.between(afterOrder, beforeOrder),
+                addedAt = Timestamp.ServerTimestamp,
+                updatedAt = Timestamp.ServerTimestamp,
+                placeFetchedAt = Timestamp.ServerTimestamp,
+            ),
+        )
+        return doc.id
     }
 
     /**

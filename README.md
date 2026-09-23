@@ -48,9 +48,14 @@ tasks are done except device-level frame measurement.
 **Phase 1 (branch `phase1`):** trip creation is real - `NewTripScreen` (name + Material date
 range picker) -> `NewTripViewModel` -> `NewTrip.build` (owner + sole member, device time zone,
 schema rules unit-tested in `NewTripTest`) -> `TripRepository.createTrip` (server
-`createdAt`/`updatedAt`). The Phase 0 sample-trip button is gone. Remaining Phase 1 items:
-Places autocomplete + add-stop, day tabs with drag reorder, map for the selected day, offline
-UX pass (planning/issues.json).
+`createdAt`/`updatedAt`). The Phase 0 sample-trip button is gone.
+**Add stop** (`AddStopSheet` -> `AddStopViewModel`): debounced Places autocomplete (>= 3 chars,
+250 ms), details on selection, one session token per search series (asserted in
+`PlacesApiTest` over a mock engine), stop written at the end of the chosen day
+(`PlacesSearch.appendOrderKey`). Stops carry `addedAt`/`updatedAt`/`placeFetchedAt`; the
+name/address refresh policy from §7 is still to do. The key needs **Places API (New)** in its
+API restrictions. Remaining Phase 1 items: day tabs with drag reorder, map for the selected
+day, offline UX pass (planning/issues.json).
 Still unverified: the Functions/Places/Calendar call shapes in `shared/data/`. Cloud Functions in `firebase/functions/` are compile-shaped
 TypeScript with TODOs where Phase 2/3 work lands (Routes, Gemini, burst collapsing).
 

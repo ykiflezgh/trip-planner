@@ -33,6 +33,10 @@ data class Stop(
     val durationMin: Int = 60,
     val notes: String = "",
     val addedBy: String = "",
+    val addedAt: BaseTimestamp? = null,        // server timestamps (§7)
+    val updatedAt: BaseTimestamp? = null,
+    /** When name/address/coords were fetched from Places: only placeId + coordinates are durable, the rest is a cache to refresh within Google's limits (§7). */
+    val placeFetchedAt: BaseTimestamp? = null,
 )
 
 @Serializable
