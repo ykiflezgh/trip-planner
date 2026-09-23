@@ -20,6 +20,12 @@ import app.tripplanner.ui.calendar.TripView
 import kotlinx.datetime.LocalTime
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
+import app.tripplanner.shared.feature.calendar.TimeDisplay
+import kotlinx.datetime.LocalDate
+import kotlinx.datetime.LocalDateTime
+import kotlinx.datetime.TimeZone
+import androidx.compose.foundation.horizontalScroll
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.Box
@@ -107,7 +113,23 @@ fun TripDetailScreen(tripId: String, name: String, focusStopId: String? = null, 
     // Agenda (list), Day (time grid) or Trip (multi-day grid) - three views of the same computed schedule.
     var view by remember { mutableStateOf(CalendarView.AGENDA) }
     val dayView = view == CalendarView.DAY
-    val schedule = state.schedule
+    // Time-zone toggle (design v1.1 §6.6): display in trip time or device-local time; never stored.
+    var showLocal by remember { mutableStateOf(false) }
+    val deviceZone = remember { TimeZone.currentSystemDefault() }
+    val tripZone = remember(state.trip?.timeZone) { state.trip?.timeZone?.let(TimeDisplay::zone) }
+    val canToggleZone = tripZone != null && state.trip != null &&
+        TimeDisplay.differs(tripZone, deviceZone, LocalDateTime(TripDays.date(state.trip!!, state.selectedDay) ?: LocalDate(2000, 1, 1), LocalTime(12, 0)))
+    val zoned = showLocal && canToggleZone
+    val display: (DaySchedule?) -> DaySchedule? = { sch -> if (zoned && sch != null) TimeDisplay.shift(sch, tripZone!!, deviceZone) else sch }
+    // A time picked on a zone-shifted grid, back in trip wall-clock terms (the trip date is the anchor).
+    val toTripTime: (day: Int, LocalTime) -> LocalTime = { day, t ->
+        if (!zoned) t else {
+            val date = TripDays.date(state.trip!!, day) ?: LocalDate(2000, 1, 1)
+            listOf(0, 1, -1).map { d -> TimeDisplay.convert(LocalDateTime(LocalDate.fromEpochDays(date.toEpochDays() + d), t), deviceZone, tripZone!!) }
+                .firstOrNull { it.date == date }?.time ?: TimeDisplay.convert(LocalDateTime(date, t), deviceZone, tripZone!!).time
+        }
+    }
+    val schedule = display(state.schedule)
     val timed = remember(schedule) { schedule?.entries?.associateBy { it.input.id }.orEmpty() }
     val warningsById = remember(schedule) { schedule?.warnings?.groupBy { it.entryId }.orEmpty() }
     // Notification deep link (design §10): select the changed stop once it is loaded.
@@ -193,14 +215,25 @@ fun TripDetailScreen(tripId: String, name: String, focusStopId: String? = null, 
                 }
             }
             DayTabs(trip = state.trip, dayCount = state.dayCount, selected = state.selectedDay, onSelect = vm::selectDay)
-            Row(Modifier.padding(horizontal = 16.dp, vertical = 4.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            Row(
+                Modifier.horizontalScroll(rememberScrollState()).padding(horizontal = 16.dp, vertical = 4.dp),
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+            ) {
                 FilterChip(selected = view == CalendarView.AGENDA, onClick = { view = CalendarView.AGENDA }, label = { Text("Agenda") })
                 FilterChip(selected = view == CalendarView.DAY, onClick = { view = CalendarView.DAY }, label = { Text("Day") })
                 if (state.dayCount > 1) FilterChip(selected = view == CalendarView.TRIP, onClick = { view = CalendarView.TRIP }, label = { Text("Trip") })
+                if (canToggleZone) {
+                    FilterChip(
+                        selected = showLocal,
+                        onClick = { showLocal = !showLocal },
+                        label = { Text("\uD83D\uDD52 " + if (showLocal) "Local" else TimeDisplay.label(tripZone!!.id)) },
+                    )
+                }
                 schedule?.let { sch ->
                     Text(
                         "${Schedule.formatTime(sch.hours.start)} \u2013 ${Schedule.formatTime(sch.hours.end)}" + if (sch.warnings.isNotEmpty()) "  \u00b7 \u26A0 ${sch.warnings.size}" else "",
                         Modifier.align(Alignment.CenterVertically),
+                        maxLines = 1,
                         style = MaterialTheme.typography.labelMedium,
                         color = if (sch.warnings.isNotEmpty()) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurfaceVariant,
                     )
@@ -208,7 +241,7 @@ fun TripDetailScreen(tripId: String, name: String, focusStopId: String? = null, 
             }
             if (view == CalendarView.TRIP && state.trip != null) {
                 TripView(
-                    schedules = (0 until state.dayCount).map { it to state.scheduleFor(it) },
+                    schedules = (0 until state.dayCount).map { it to display(state.scheduleFor(it)) },
                     dayLabel = { day -> dayLabel(state.trip, day) },
                     selectedDay = state.selectedDay,
                     selectedId = state.selectedStopId,
@@ -216,8 +249,8 @@ fun TripDetailScreen(tripId: String, name: String, focusStopId: String? = null, 
                     onSelectDay = vm::selectDay,
                     onSelect = { day, id -> vm.selectDay(day); vm.selectStop(id) },
                     onPin = { day, id, start ->
-                        val sch = state.scheduleFor(day)
-                        vm.pinEntry(id, Schedule.formatTime(start), sch?.let { chronologicalOrder(it, state.stopsByDay[day].orEmpty(), id, start) })
+                        val sch = display(state.scheduleFor(day))
+                        vm.pinEntry(id, Schedule.formatTime(toTripTime(day, start)), sch?.let { chronologicalOrder(it, state.stopsByDay[day].orEmpty(), id, start) })
                     },
                     onResize = vm::resizeEntry,
                     modifier = Modifier.fillMaxSize(),
@@ -228,7 +261,7 @@ fun TripDetailScreen(tripId: String, name: String, focusStopId: String? = null, 
                     selectedId = state.selectedStopId,
                     canEdit = state.canEdit,
                     onSelect = vm::selectStop,
-                    onPin = { id, start -> vm.pinEntry(id, Schedule.formatTime(start), chronologicalOrder(schedule, dayStops, id, start)) },
+                    onPin = { id, start -> vm.pinEntry(id, Schedule.formatTime(toTripTime(state.selectedDay, start)), chronologicalOrder(schedule, dayStops, id, start)) },
                     onResize = vm::resizeEntry,
                     modifier = Modifier.fillMaxSize(),
                 )
@@ -332,6 +365,7 @@ fun TripDetailScreen(tripId: String, name: String, focusStopId: String? = null, 
                 trip = state.trip,
                 dayCount = state.dayCount,
                 timed = timed[stop.id],
+                zoneHint = if (zoned) TimeDisplay.label(tripZone!!.id) else null,
                 canEdit = state.canEdit,
                 onPin = { hhmm -> vm.pinEntry(stop.id, hhmm, null) },
                 onUnpin = { vm.unpinEntry(stop.id) },
@@ -540,6 +574,8 @@ private fun StopSheet(
     trip: Trip?,
     dayCount: Int,
     timed: TimedEntry?,
+    /** When the screen shows local time, the pin field still takes trip time: say which zone. */
+    zoneHint: String?,
     canEdit: Boolean,
     onPin: (String) -> Unit,
     onUnpin: () -> Unit,
@@ -569,7 +605,7 @@ private fun StopSheet(
                     OutlinedTextField(
                         value = pinText,
                         onValueChange = { pinText = it.take(5) },
-                        label = { Text(if (stop.fixedStart != null) "Pinned at" else "Pin to time") },
+                        label = { Text((if (stop.fixedStart != null) "Pinned at" else "Pin to time") + (zoneHint?.let { " \u00b7 $it" } ?: "")) },
                         placeholder = { Text("HH:mm") },
                         singleLine = true,
                         isError = pinText.isNotBlank() && Schedule.parseTime(pinText) == null,

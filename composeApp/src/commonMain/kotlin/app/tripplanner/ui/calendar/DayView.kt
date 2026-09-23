@@ -162,8 +162,8 @@ private data class TimeRange(val firstMinute: Int, val lastMinute: Int) {
  * - **Space:** O(1).
  */
 private fun timeRange(schedules: List<DaySchedule>): TimeRange {
-    val first = schedules.minOfOrNull { s -> minOf(s.hours.start.toMinutes(), s.entries.minOfOrNull { it.start.minuteOfDay() } ?: Int.MAX_VALUE) } ?: 9 * 60
-    val last = schedules.maxOfOrNull { s -> maxOf(s.hours.end.toMinutes(), s.entries.maxOfOrNull { it.end.minuteOfDay() } ?: 0) } ?: 21 * 60
+    val first = schedules.minOfOrNull { s -> minOf(s.hoursStartMin(), s.entries.minOfOrNull { s.minutes(it.start) } ?: Int.MAX_VALUE) } ?: 9 * 60
+    val last = schedules.maxOfOrNull { s -> maxOf(s.hoursEndMin(), s.entries.maxOfOrNull { s.minutes(it.end) } ?: 0) } ?: 21 * 60
     val firstMinute = (first / 60) * 60
     return TimeRange(firstMinute, (((last + 59) / 60) * 60).coerceAtLeast(firstMinute + 60))
 }
@@ -181,7 +181,7 @@ private fun TimeGrid(range: TimeRange, modifier: Modifier = Modifier, columns: @
         for (m in range.firstMinute..range.lastMinute step 60) {
             val y = range.y(m)
             Text(
-                Schedule.formatTime(LocalTime(m / 60 % 24, 0)),
+                Schedule.formatTime(LocalTime(((m / 60) % 24 + 24) % 24, 0)),
                 Modifier.offset(y = y - 8.dp).width(LABEL_WIDTH),
                 style = MaterialTheme.typography.labelSmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
@@ -213,14 +213,14 @@ private fun TimeGridColumn(
 ) {
     Box(modifier.fillMaxSize()) {
         Box(
-            Modifier.offset(y = range.y(schedule.hours.start.toMinutes()))
-                .fillMaxWidth().height(range.minuteDp * (schedule.hours.end.toMinutes() - schedule.hours.start.toMinutes()).toFloat())
+            Modifier.offset(y = range.y(schedule.hoursStartMin()))
+                .fillMaxWidth().height(range.minuteDp * (schedule.hoursEndMin() - schedule.hoursStartMin()).toFloat())
                 .background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.25f)),
         )
         schedule.entries.forEach { entry ->
             entry.travelBefore?.let { leg ->
-                val h = range.minuteDp * (leg.end.minuteOfDay() - leg.start.minuteOfDay()).toFloat()
-                if (h > 0.dp) HatchedLeg(Modifier.offset(x = 4.dp, y = range.y(leg.start.minuteOfDay())).fillMaxWidth().height(h), pending = leg.pending)
+                val h = range.minuteDp * (schedule.minutes(leg.end) - schedule.minutes(leg.start)).toFloat()
+                if (h > 0.dp) HatchedLeg(Modifier.offset(x = 4.dp, y = range.y(schedule.minutes(leg.start))).fillMaxWidth().height(h), pending = leg.pending)
             }
             EntryBlock(
                 entry = entry,
@@ -229,7 +229,8 @@ private fun TimeGridColumn(
                 canEdit = canEdit,
                 compact = compact,
                 minuteDp = range.minuteDp,
-                top = range.y(entry.start.minuteOfDay()),
+                top = range.y(schedule.minutes(entry.start)),
+                startMinutes = schedule.minutes(entry.start),
                 leftInset = 4.dp,
                 onSelect = { onSelect(entry.input.id) },
                 onPin = { start -> onPin(entry.input.id, start) },
@@ -253,6 +254,8 @@ private fun EntryBlock(
     compact: Boolean,
     minuteDp: Dp,
     top: Dp,
+    /** Minutes from the schedule's date to the entry's start (may exceed a day after a zone shift). */
+    startMinutes: Int,
     leftInset: Dp,
     onSelect: () -> Unit,
     onPin: (LocalTime) -> Unit,
@@ -288,9 +291,9 @@ private fun EntryBlock(
                     detectDragGesturesAfterLongPress(
                         onDrag = { change, delta -> change.consume(); dragMinutes += delta.y / minutePx },
                         onDragEnd = {
-                            val snapped = ((entry.start.minuteOfDay() + dragMinutes) / 15f).roundToInt() * 15
+                            val snapped = ((startMinutes + dragMinutes) / 15f).roundToInt() * 15
                             dragMinutes = 0f
-                            onPin(LocalTime((snapped.coerceIn(0, 24 * 60 - 15)) / 60, snapped.coerceIn(0, 24 * 60 - 15) % 60))
+                            onPin(LocalTime.fromMinutes(snapped))
                         },
                         onDragCancel = { dragMinutes = 0f },
                     )
@@ -299,7 +302,7 @@ private fun EntryBlock(
     ) {
         Box(Modifier.fillMaxWidth()) {
             Column(Modifier.padding(horizontal = if (compact) 4.dp else 8.dp, vertical = if (compact) 2.dp else 4.dp)) {
-                val shownStart = if (moving) LocalTime.fromMinutes(((entry.start.minuteOfDay() + dragMinutes) / 15f).roundToInt() * 15) else entry.start.time
+                val shownStart = if (moving) LocalTime.fromMinutes(((startMinutes + dragMinutes) / 15f).roundToInt() * 15) else entry.start.time
                 Text(
                     (if (entry.pinned || moving) "📌 " else "") + Schedule.formatTime(shownStart) +
                         if (compact) "" else " – " + Schedule.formatTime(LocalTime.fromMinutes(shownStart.toMinutes() + durationMin + resizeMinutes.roundToInt())),
@@ -364,6 +367,11 @@ private fun HatchedLeg(modifier: Modifier, pending: Boolean) {
 
 private fun LocalTime.toMinutes(): Int = hour * 60 + minute
 private fun LocalDateTime.minuteOfDay(): Int = hour * 60 + minute
+/** Minutes from the schedule's date, so a time shifted into the next calendar day keeps flowing down the grid. */
+private fun DaySchedule.minutes(t: LocalDateTime): Int = ((t.date.toEpochDays() - date.toEpochDays()).toInt()) * 24 * 60 + t.minuteOfDay()
+private fun DaySchedule.hoursStartMin(): Int = hours.start.toMinutes()
+/** Day hours that wrap past midnight after a zone shift (21:00 Lisbon = 05:00 Tokyo) extend into the next day. */
+private fun DaySchedule.hoursEndMin(): Int = hours.end.toMinutes().let { if (it <= hoursStartMin()) it + 24 * 60 else it }
 private fun LocalDateTime.minutesUntil(other: LocalDateTime): Int = ((other.date.toEpochDays() - date.toEpochDays()).toInt()) * 24 * 60 + other.minuteOfDay() - minuteOfDay()
 private fun LocalTime.Companion.fromMinutes(m: Int): LocalTime { val c = ((m % (24 * 60)) + 24 * 60) % (24 * 60); return LocalTime(c / 60, c % 60) }
 

@@ -125,7 +125,13 @@ Pins and resizes produce activity events and pushes ("moved Belém Tower to 14:0
 (`TimeGrid` / `TimeGridColumn` in `ui/calendar/DayView.kt`); the **Trip** chip shows up to seven days
 per horizontally paged screen with compact blocks, a tappable day header that selects the day, and
 block taps that select the event (and its day) - read-only on phones, drag-to-pin and resize on
-widths >= 600 dp (design §6.6). Not yet built from v1.1 Phase 3: time-zone toggle, reminders, the
+widths >= 600 dp (design §6.6). **Time-zone toggle** (branch `tz-toggle`): when the device zone differs from the trip's, a chip
+next to the view chips switches the calendar between trip time (labelled with the trip zone) and
+device-local time. `TimeDisplay.shift` converts a computed `DaySchedule` through instants (DST-safe)
+and anchors it on the local date of the day's start, so a day that lands on another calendar day
+still draws as one grid; the grid measures minutes from that date. Nothing stored is converted: a
+drag-to-pin in local mode is converted back to trip wall-clock before the write, and the stop
+sheet's pin field is labelled with the trip zone. Not yet built from v1.1 Phase 3: reminders, the
 ICS feed Function, Gemini suggestions.
 Still unverified: the Places call shapes in `shared/data/`. Cloud Functions in `firebase/functions/` still carry a TODO for Gemini.
 
