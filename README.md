@@ -110,7 +110,20 @@ call writes an `error` leg so the client shows a dash and the next change retrie
 renders both modes' legs between consecutive stops (shimmer while missing, never blocking). `ROUTES_API_KEY` holds a real key on the dev project (2026-09-23; rotate with
 `firebase functions:secrets:set ROUTES_API_KEY` and redeploy `onStopWritten`); verified on Android with
 live Routes numbers between two Lisbon stops.
-Still unverified: the Places/Calendar call shapes in `shared/data/`. Cloud Functions in `firebase/functions/` still carry a TODO for Gemini.
+**Phase 3 (branch `phase3`, design v1.1) — shared trip calendar:** the Google Calendar export was
+dropped (v1.1 decision 5). A new pure-Kotlin module `schedule/` (Android, iOS and a Node.js library
+build for the future ICS feed) computes each day from the same Firestore data on every device:
+day start + durations + travel legs, pinned entries (`stops.fixedStart` as wall-clock "HH:mm"),
+custom entries (`kind: "custom"`, no place, skipped by the travel trigger), per-day hours
+(`trips/{id}/days/{day}`) and warnings (late arrival, overlap, day overrun); nine golden tests run on
+JVM and Node (`./gradlew :schedule:jsNodeTest`). The trip screen has Agenda (list with computed
+times and warnings) and Day (time grid: long-press-drag to pin, snapped to 15 min and re-ordered
+chronologically in one write; drag the bottom edge to resize; hatched travel legs; free-time gaps)
+views, an Add-stop "Custom entry" form, pin/unpin in the stop sheet and a Day-hours dialog.
+Pins and resizes produce activity events and pushes ("moved Belém Tower to 14:00 on Day 1").
+Not yet built from v1.1 Phase 3: Trip (multi-day) view, time-zone toggle, reminders, the ICS feed
+Function, Gemini suggestions.
+Still unverified: the Places call shapes in `shared/data/`. Cloud Functions in `firebase/functions/` still carry a TODO for Gemini.
 
 ## Layout
 

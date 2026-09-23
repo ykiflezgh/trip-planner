@@ -7,5 +7,8 @@
 "notif_stop_reordered" = "%1$@ reordered %2$@ on Day %3$@";
 "notif_stop_edited" = "%1$@ edited %2$@";
 "notif_member_joined" = "%1$@ joined the trip";
+"notif_entry_pinned" = "%1$@ moved %2$@ to %3$@ on Day %4$@";
+"notif_entry_unpinned" = "%1$@ unpinned %2$@";
+"notif_entry_resized" = "%1$@ changed how long %2$@ takes";
 "notif_generic" = "%1$@ changed the plan";
 "notif_digest" = "%1$@ made %2$@ changes";

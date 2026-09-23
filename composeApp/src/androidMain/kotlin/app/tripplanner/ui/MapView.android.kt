@@ -35,7 +35,7 @@ private const val FIT_PADDING_DP = 56
  */
 @Composable
 actual fun MapView(
-    stops: List<Stop>,
+    stops: List<Stop>, // custom entries (no coordinates) are dropped below
     selectedStopId: String?,
     onStopTapped: (String) -> Unit,
     modifier: Modifier,
@@ -44,6 +44,7 @@ actual fun MapView(
     // newLatLngBounds needs a laid-out map ("Map size can't be 0"); onMapLoaded is the safe gate.
     var mapLoaded by remember { mutableStateOf(false) }
     val paddingPx = with(LocalDensity.current) { FIT_PADDING_DP.dp.roundToPx() }
+    @Suppress("NAME_SHADOWING") val stops = stops.filter { it.hasPlace }
     val stopIds = stops.map { it.id }
 
     // Fit the day's stops when the set changes (tab switch, add, remove) and nothing is selected.
@@ -85,5 +86,5 @@ actual fun MapView(
     }
 }
 
-private val Stop.latLng: LatLng get() = LatLng(lat, lng)
+private val Stop.latLng: LatLng get() = LatLng(lat ?: 0.0, lng ?: 0.0) // only reached for stops with hasPlace
 private val Int.dp get() = androidx.compose.ui.unit.Dp(this.toFloat())

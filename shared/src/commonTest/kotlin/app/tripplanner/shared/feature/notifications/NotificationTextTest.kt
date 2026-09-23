@@ -15,6 +15,8 @@ class NotificationTextTest {
         assertEquals("Ana moved Louvre from Day 1 to Day 3", NotificationText.describe("stop_moved", "Ana", "Louvre", 2, 0))
         assertEquals("Ana reordered Louvre on Day 2", NotificationText.describe("stop_moved", "Ana", "Louvre", 1, 1))
         assertEquals("Ana joined the trip", NotificationText.describe("member_joined", "Ana", "", 0, null))
+        assertEquals("Ana moved Louvre to 14:00 on Day 2", NotificationText.describe("entry_pinned", "Ana", "Louvre", 1, null, "14:00"))
+        assertEquals("Ana unpinned Louvre", NotificationText.describe("entry_unpinned", "Ana", "Louvre", 1, null))
         assertEquals("Someone changed the plan", NotificationText.describe("mystery", "", "", 0, null))
         assertEquals("Ana added Louvre to Day 2", NotificationText.describe(ActivityEvent(type = "stop_added", actorName = "Ana", stopName = "Louvre", day = 1)))
     }

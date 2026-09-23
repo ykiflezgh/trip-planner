@@ -53,6 +53,12 @@ export function iosAlert(n: Notice): { "loc-key": string; "loc-args": string[] }
       return { "loc-key": "notif_stop_edited", "loc-args": [who, stop] };
     case "member_joined":
       return { "loc-key": "notif_member_joined", "loc-args": [who] };
+    case "entry_pinned":
+      return { "loc-key": "notif_entry_pinned", "loc-args": [who, stop, n.facts.fixedStart ?? "", day] };
+    case "entry_unpinned":
+      return { "loc-key": "notif_entry_unpinned", "loc-args": [who, stop] };
+    case "entry_resized":
+      return { "loc-key": "notif_entry_resized", "loc-args": [who, stop] };
     default:
       return { "loc-key": "notif_generic", "loc-args": [who] };
   }
@@ -80,6 +86,7 @@ export function buildMessage(n: Notice, tokens: string[]): MulticastMessage {
     count: String(n.count),
   };
   if (n.facts.fromDay !== undefined) data.fromDay = String(n.facts.fromDay);
+  if (n.facts.fixedStart) data.fixedStart = n.facts.fixedStart;
   return {
     tokens,
     data,

@@ -144,8 +144,12 @@ export function classifyStopWrite(before: DocumentSnapshot | undefined, after: D
   if (b && !a) return { type: "stop_removed", stopName, day: Number(b.day ?? 0) };
   if (!b || !a) return null;
   if (a.day !== b.day || a.order !== b.order) {
+    // A pin that also reorders (design v1.1 §8.4 step 2) reads as "moved to 14:00", not "reordered".
+    if ((a.fixedStart ?? null) !== (b.fixedStart ?? null) && a.fixedStart) return { type: "entry_pinned", stopName, day: Number(a.day ?? 0) };
     return { type: "stop_moved", stopName, day: Number(a.day ?? 0), fromDay: Number(b.day ?? 0) };
   }
+  if ((a.fixedStart ?? null) !== (b.fixedStart ?? null)) return { type: a.fixedStart ? "entry_pinned" : "entry_unpinned", stopName, day: Number(a.day ?? 0) };
+  if (a.durationMin !== b.durationMin) return { type: "entry_resized", stopName, day: Number(a.day ?? 0) };
   const changed = new Set([...Object.keys(a), ...Object.keys(b)]).values();
   for (const f of changed) {
     if (BOOKKEEPING_FIELDS.has(f)) continue;
@@ -189,13 +193,16 @@ export const onStopWritten = onDocumentWrittenWithAuthContext(
       stopId,
       stopName: facts.stopName,
       day,
+      fixedStart: (after?.get("fixedStart") as string | undefined) ?? null,
       fromDay: facts.fromDay ?? null,
       summary: `${facts.type.replace("_", " ")}: ${facts.stopName} (day ${day + 1})`,
       createdAt: FieldValue.serverTimestamp(),
     });
 
-    // 2. Travel-time recompute for affected adjacencies (§8.3)
-    if (facts.type !== "stop_edited") {
+    // 2. Travel-time recompute for affected adjacencies (§8.3); pins and resizes call no Routes API,
+    // and custom entries never take part in travel (design v1.1 §8.3).
+    const isCustom = (after?.get("kind") ?? before?.get("kind")) === "custom";
+    if (!isCustom && (facts.type === "stop_added" || facts.type === "stop_removed" || facts.type === "stop_moved")) {
       const days = new Set<number>([facts.day]);
       if (facts.fromDay !== undefined) days.add(facts.fromDay);
       await recomputeTravel(tripId, stopId, [...days]);
@@ -220,6 +227,8 @@ async function recomputeTravel(tripId: string, changedStopId: string, days: numb
   // Fractional-index keys sort by plain code-point order (core/util/FractionalIndex), not locale order.
   const byOrder = (a: string, b: string) => (a < b ? -1 : a > b ? 1 : 0);
   for (const d of stopsSnap.docs.sort((a, b) => byOrder(String(a.get("order")), String(b.get("order"))))) {
+    if (d.get("kind") === "custom") continue; // adjacency skips custom entries (design v1.1 §6.5 rule 2)
+    if (typeof d.get("lat") !== "number" || typeof d.get("lng") !== "number") continue; // no place, nothing to route
     const point: StopPoint = { id: d.id, lat: Number(d.get("lat")), lng: Number(d.get("lng")) };
     const day = Number(d.get("day"));
     byDay.set(day, [...(byDay.get(day) ?? []), point]);
@@ -348,6 +357,8 @@ export const onActivityCreated = onDocumentCreated("trips/{tripId}/activity/{eve
   if (stopId) facts.stopId = stopId;
   const fromDay = snap.get("fromDay") as number | null | undefined;
   if (typeof fromDay === "number") facts.fromDay = fromDay;
+  const fixedStart = snap.get("fixedStart") as string | null | undefined;
+  if (fixedStart) facts.fixedStart = fixedStart;
   if (!actorId) { logger.warn("activity without actor; no fan-out", { tripId, eventId: event.params.eventId }); return; }
 
   const windowRef = db.doc(`trips/${tripId}/notify/${actorId}`);

@@ -1,10 +1,12 @@
 package app.tripplanner.shared.data
 
+import app.tripplanner.shared.core.model.DayHoursDoc
 import app.tripplanner.shared.core.model.Stop
 import app.tripplanner.shared.core.model.TravelLeg
 import app.tripplanner.shared.core.model.Trip
 import app.tripplanner.shared.core.util.FractionalIndex
 import dev.gitlive.firebase.Firebase
+import dev.gitlive.firebase.firestore.FieldValue
 import dev.gitlive.firebase.firestore.Timestamp
 import dev.gitlive.firebase.firestore.firestore
 import co.touchlab.kermit.Logger
@@ -41,6 +43,12 @@ interface TripRepository {
     /** [updatedBy] is the acting uid, the Function's fallback actor when the write's auth context is missing (design §10). */
     fun moveStop(tripId: String, stopId: String, day: Int, afterOrder: String?, beforeOrder: String?, updatedBy: String)
     fun deleteStop(tripId: String, stopId: String)
+    /** Per-day hour overrides (design v1.1 §7, §8.4). */
+    fun days(tripId: String): Flow<List<DayHoursDoc>>
+    /** Pins (`"HH:mm"`) or unpins (`null`) an entry's start and, when given, moves it to [order] in one write (design §8.4 step 2). */
+    fun setFixedStart(tripId: String, stopId: String, fixedStart: String?, order: String?, updatedBy: String)
+    fun setDuration(tripId: String, stopId: String, durationMin: Int, updatedBy: String)
+    fun setDayHours(tripId: String, day: Int, start: String, end: String, updatedBy: String)
 }
 
 /**
@@ -202,5 +210,56 @@ class FirestoreTripRepository(
      */
     override fun deleteStop(tripId: String, stopId: String) {
         write("remove stop") { db.collection("trips").document(tripId).collection("stops").document(stopId).delete() }
+    }
+
+    /**
+     * Complexity:
+     * - **Time:** O(D) per snapshot for the D overridden days.
+     * - **Space:** O(D).
+     */
+    override fun days(tripId: String): Flow<List<DayHoursDoc>> =
+        db.collection("trips").document(tripId).collection("days").snapshots
+            .map { qs -> qs.documents.map { it.data<DayHoursDoc>().copy(day = it.id.toIntOrNull() ?: 0) } }
+            .logListener("trips/$tripId/days")
+
+    /**
+     * Complexity:
+     * - **Time:** O(1) single-document update.
+     * - **Space:** O(1).
+     */
+    override fun setFixedStart(tripId: String, stopId: String, fixedStart: String?, order: String?, updatedBy: String) {
+        write(if (fixedStart == null) "unpin entry" else "pin entry") {
+            val fields = buildList<Pair<String, Any?>> {
+                add("fixedStart" to (fixedStart ?: FieldValue.delete))
+                if (order != null) add("order" to order)
+                add("updatedBy" to updatedBy)
+                add("updatedAt" to Timestamp.ServerTimestamp)
+            }
+            db.collection("trips").document(tripId).collection("stops").document(stopId).update(*fields.toTypedArray())
+        }
+    }
+
+    /**
+     * Complexity:
+     * - **Time:** O(1) single-document update.
+     * - **Space:** O(1).
+     */
+    override fun setDuration(tripId: String, stopId: String, durationMin: Int, updatedBy: String) {
+        write("resize entry") {
+            db.collection("trips").document(tripId).collection("stops").document(stopId)
+                .update("durationMin" to durationMin, "updatedBy" to updatedBy, "updatedAt" to Timestamp.ServerTimestamp)
+        }
+    }
+
+    /**
+     * Complexity:
+     * - **Time:** O(1) merge write.
+     * - **Space:** O(1).
+     */
+    override fun setDayHours(tripId: String, day: Int, start: String, end: String, updatedBy: String) {
+        write("set day hours") {
+            db.collection("trips").document(tripId).collection("days").document(day.toString())
+                .set(mapOf("start" to start, "end" to end, "updatedBy" to updatedBy, "updatedAt" to Timestamp.ServerTimestamp), merge = true)
+        }
     }
 }
