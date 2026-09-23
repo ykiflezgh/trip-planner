@@ -53,6 +53,9 @@ import androidx.compose.material3.ListItemDefaults
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.OutlinedTextField
+import androidx.compose.ui.platform.LocalClipboardManager
+import androidx.compose.ui.platform.LocalUriHandler
+import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.ScrollableTabRow
 import androidx.compose.material3.SheetValue
@@ -188,6 +191,18 @@ fun TripDetailScreen(tripId: String, name: String, focusStopId: String? = null, 
                         )
                         if (state.canEdit) {
                             DropdownMenuItem(text = { Text("Day hours\u2026") }, onClick = { showMenu = false; showDayHours = true })
+                        }
+                        if (state.calendarFeedEnabled) {
+                            DropdownMenuItem(
+                                text = { Text(if (state.calendarBusy) "Preparing calendar link\u2026" else "Add to my calendar\u2026") },
+                                enabled = !state.calendarBusy && state.online,
+                                onClick = { showMenu = false; vm.addToCalendar() },
+                            )
+                            DropdownMenuItem(
+                                text = { Text("Remove my calendar links") },
+                                enabled = !state.calendarBusy && state.online,
+                                onClick = { showMenu = false; vm.revokeCalendarLinks() },
+                            )
                         }
                     }
                 },
@@ -332,6 +347,9 @@ fun TripDetailScreen(tripId: String, name: String, focusStopId: String? = null, 
         }
     }
 
+    state.feedUrl?.let { url ->
+        CalendarFeedDialog(url = url, onMessage = { vm.showMessage(it) }, onDismiss = vm::consumeFeedUrl)
+    }
     if (showDayHours) {
         // Day hours are stored as trip wall-clock, so the editor always works on the *unshifted*
         // schedule, whatever the display toggle shows (review on #5); the label says which zone.
@@ -468,6 +486,45 @@ private fun DayHoursDialog(label: String, start: String, end: String, onSave: (S
         },
         confirmButton = { Button(onClick = { onSave(s, e) }, enabled = valid) { Text("Save") } },
         dismissButton = { TextButton(onClick = onDismiss) { Text("Cancel") } },
+    )
+}
+
+/**
+ * "Add to my calendar" result (design §8.6): the private feed link, copyable or opened as
+ * `webcal://` so the platform's calendar app subscribes to it.
+ *
+ * Complexity:
+ * - **Recomposition Time:** O(1).
+ * - **Composition Memory:** O(1).
+ */
+@Composable
+private fun CalendarFeedDialog(url: String, onMessage: (String) -> Unit, onDismiss: () -> Unit) {
+    @Suppress("DEPRECATION") val clipboard = LocalClipboardManager.current
+    val uriHandler = LocalUriHandler.current
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("Add to my calendar") },
+        text = {
+            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                Text("Subscribe your calendar app to this link. It is a read-only copy of the itinerary and can lag the app by up to an hour.")
+                Text(url, style = MaterialTheme.typography.bodySmall)
+                Text("Anyone with the link can read the itinerary. \"Remove my calendar links\" in the menu revokes it.", style = MaterialTheme.typography.bodySmall)
+            }
+        },
+        confirmButton = {
+            Button(onClick = {
+                val webcal = "webcal://" + url.removePrefix("https://")
+                runCatching { uriHandler.openUri(webcal) }
+                    .recoverCatching { uriHandler.openUri(url) }
+                    .onFailure { onMessage("No calendar app could open the link; copy it instead") }
+            }) { Text("Open") }
+        },
+        dismissButton = {
+            Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                TextButton(onClick = { clipboard.setText(AnnotatedString(url)); onMessage("Calendar link copied") }) { Text("Copy link") }
+                TextButton(onClick = onDismiss) { Text("Done") }
+            }
+        },
     )
 }
 

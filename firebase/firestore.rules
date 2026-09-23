@@ -31,6 +31,7 @@ service cloud.firestore {
     }
 
     match /invites/{code}   { allow read, write: if false; }
+    match /calendarFeeds/{hash} { allow read, write: if false; }   // Functions only (design §8.6)
     match /placesCache/{id} { allow read, write: if false; }
   }
 }

@@ -39,6 +39,8 @@ import org.koin.dsl.module
 data class AppConfig(
     /** Firebase Hosting domain that serves /join/{code} and the App/Universal Link files (design §8.2). */
     val appLinkHost: String = "tripplanner-dev-fe0a4.web.app",
+    /** Kill switch for "Add to my calendar" (design §8.6 rollout note); flip to false to hide the menu item. */
+    val calendarFeedEnabled: Boolean = true,
 )
 
 fun sharedModule(placesApiKey: String, config: AppConfig = AppConfig()) = module {

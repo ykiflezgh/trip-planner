@@ -224,6 +224,18 @@ object ScheduleJs {
         travelJson: String,
         defaultMode: String,
     ): String = ScheduleJson.computeDay(dateIso, dayStart, dayEnd, entriesJson, travelJson, defaultMode)
+
+    /**
+     * Epoch seconds of a wall-clock time ("2026-09-22T09:00") in an IANA zone; the ICS feed
+     * emits UTC instants computed exactly as the app does (DST rules included).
+     *
+     * Complexity:
+     * - **Time:** O(1).
+     * - **Space:** O(1).
+     */
+    @JsName("epochSeconds")
+    fun epochSeconds(localDateTimeIso: String, zoneId: String): Double =
+        Schedule.epochSeconds(LocalDateTime.parse(localDateTimeIso), zoneId).toDouble()
 }
 
 /** Loads platform time-zone data where it is not built in (js-joda on Node); no-op elsewhere. */

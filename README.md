@@ -141,8 +141,21 @@ foreground, any change to the open trip and each activity push, and hands the se
 in SharedPreferences; iOS: `UNCalendarNotificationTrigger` via `ReminderBridge`). A tap opens the trip
 at that stop through the existing deep-link intake. Android alarms do not survive a reboot; the next
 app start re-syncs. Also fixed here: a cold-start deep link to a later day crashed the Material tab
-row (indicator indexed stale positions) - the indicator is now guarded. Not yet built from v1.1
-Phase 3: the ICS feed Function, Gemini suggestions.
+row (indicator indexed stale positions) - the indicator is now guarded. **ICS feed** (branch `ics-feed`, design §8.6):
+"Add to my calendar…" in the trip menu calls `createCalendarFeed`, which mints a 256-bit token
+(only its SHA-256 is stored in `calendarFeeds/{hash}`) and returns `https://<host>/cal/{token}.ics`;
+the dialog copies it or opens it as `webcal://`. `GET /cal/**` is a Hosting rewrite to the
+`calendarFeed` Function, which re-checks membership, runs the schedule engine's Node build
+(`./gradlew :schedule:packageForFunctions` copies it to `firebase/functions/vendor/schedule`,
+gitignored, also run as a deploy predeploy step) and emits one VEVENT per stop as UTC instants with
+a stable `UID {stopId}@<host>`, `SEQUENCE` from `updatedAt`, LOCATION = name + Google Maps place
+link, DESCRIPTION = notes + `tripplanner://trip/{tripId}/stop/{stopId}` (both apps open it via
+`DeepLinkIntake`), `X-PUBLISHED-TTL: PT1H`, `Cache-Control: private, max-age=900`, a deterministic
+ETag (304 on `If-None-Match` at the Function URL; Hosting does not forward the header, so through
+the rewrite every refresh is a 200), 429 for fetches under 30 s apart and 404 once revoked
+("Remove my calendar links") or when the owner left the trip. `AppConfig.calendarFeedEnabled`
+hides the menu items. Tests: `firebase/functions/src/feed.test.ts` parses the output with `ical.js`.
+Not yet built from v1.1 Phase 3: Gemini suggestions.
 Still unverified: the Places call shapes in `shared/data/`. Cloud Functions in `firebase/functions/` still carry a TODO for Gemini.
 
 ## Layout

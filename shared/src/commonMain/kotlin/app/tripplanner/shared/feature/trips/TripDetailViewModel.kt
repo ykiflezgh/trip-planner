@@ -57,6 +57,12 @@ data class TripDetailUiState(
     val muted: Boolean = false,
     /** One-shot: the invite link to hand to the platform share sheet; the screen calls [TripDetailViewModel.consumeShare]. */
     val shareUrl: String? = null,
+    /** A calendar-feed callable is in flight (design §8.6). */
+    val calendarBusy: Boolean = false,
+    /** One-shot: the freshly minted ICS feed link; the screen shows it and calls [TripDetailViewModel.consumeFeedUrl]. */
+    val feedUrl: String? = null,
+    /** "Add to my calendar" is offered (config flag, design §8.6). */
+    val calendarFeedEnabled: Boolean = true,
 ) {
     /** True while any local write on this trip awaits the server (design §9). */
     val pendingSync: Boolean get() = trip?.pendingSync == true || stopsByDay.values.any { day -> day.any { it.pendingSync } }
@@ -107,8 +113,12 @@ class TripDetailViewModel(
     private val selectedDay = MutableStateFlow(0)
     private val message = MutableStateFlow<String?>(null)
     private val share = MutableStateFlow<Pair<Boolean, String?>>(false to null) // sharing, shareUrl
+    private val feed = MutableStateFlow<Pair<Boolean, String?>>(false to null) // calendarBusy, feedUrl
     /** UI-only state folded into one flow so the outer combine stays within the typed arity. */
-    private data class Local(val selectedStopId: String?, val selectedDay: Int, val message: String?, val sharing: Boolean, val shareUrl: String?)
+    private data class Local(
+        val selectedStopId: String?, val selectedDay: Int, val message: String?, val sharing: Boolean, val shareUrl: String?,
+        val calendarBusy: Boolean = false, val feedUrl: String? = null,
+    )
 
     private val stops = repo.stops(tripId)
         .map { stops -> TripDetailUiState(loading = false, stopsByDay = stops.groupBy { it.day }) }
@@ -147,9 +157,12 @@ class TripDetailViewModel(
                 s.copy(trip = t, online = online, muted = m, isOwner = role == "owner", canEdit = role == "owner" || role == "editor")
             },
             combine(travel, days) { legs, d -> legs.associateBy { Triple(it.fromStopId, it.toStopId, it.mode) } to d.associateBy { it.day } },
-            combine(selectedStopId, selectedDay, message, share) { sel, day, msg, sh -> Local(sel, day, msg, sh.first, sh.second) },
+            combine(selectedStopId, selectedDay, message, share, feed) { sel, day, msg, sh, f -> Local(sel, day, msg, sh.first, sh.second, f.first, f.second) },
         ) { s, td, l ->
-            s.copy(legs = td.first, dayHours = td.second, selectedStopId = l.selectedStopId, selectedDay = l.selectedDay, message = l.message, sharing = l.sharing, shareUrl = l.shareUrl)
+            s.copy(
+                legs = td.first, dayHours = td.second, selectedStopId = l.selectedStopId, selectedDay = l.selectedDay, message = l.message,
+                sharing = l.sharing, shareUrl = l.shareUrl, calendarBusy = l.calendarBusy, feedUrl = l.feedUrl, calendarFeedEnabled = config.calendarFeedEnabled,
+            )
         }
             .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), TripDetailUiState())
 
@@ -256,6 +269,69 @@ class TripDetailViewModel(
      */
     fun consumeShare() {
         share.value = false to null
+    }
+
+    /**
+     * "Add to my calendar" (design §8.6): the Function mints a private ICS link; the screen shows
+     * it once (copy / open as `webcal://`).
+     *
+     * Complexity:
+     * - **Time:** O(1) callable round trip.
+     * - **Space:** O(1).
+     */
+    fun addToCalendar() {
+        if (feed.value.first) return
+        viewModelScope.launch {
+            feed.value = true to null
+            try {
+                feed.value = false to functions.createCalendarFeed(tripId).url
+            } catch (e: Exception) {
+                feed.value = false to null
+                message.value = e.message ?: "Could not create a calendar link"
+            }
+        }
+    }
+
+    /**
+     * Revokes this member's calendar links for the trip (design §8.6); subscribed calendars get 404 next refresh.
+     *
+     * Complexity:
+     * - **Time:** O(1) callable round trip.
+     * - **Space:** O(1).
+     */
+    fun revokeCalendarLinks() {
+        if (feed.value.first) return
+        viewModelScope.launch {
+            feed.value = true to null
+            try {
+                val n = functions.revokeCalendarFeed(tripId).revoked
+                message.value = if (n == 0) "No calendar links to remove" else "Removed $n calendar link${if (n == 1) "" else "s"}"
+            } catch (e: Exception) {
+                message.value = e.message ?: "Could not remove calendar links"
+            } finally {
+                feed.value = false to null
+            }
+        }
+    }
+
+    /**
+     * Lets the screen surface a one-shot message through the same snackbar channel.
+     *
+     * Complexity:
+     * - **Time:** O(1).
+     * - **Space:** O(1).
+     */
+    fun showMessage(text: String) {
+        message.value = text
+    }
+
+    /**
+     * Complexity:
+     * - **Time:** O(1).
+     * - **Space:** O(1).
+     */
+    fun consumeFeedUrl() {
+        feed.value = false to null
     }
 
     /**

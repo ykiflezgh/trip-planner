@@ -28,6 +28,14 @@
                 <category android:name="android.intent.category.BROWSABLE" />
                 <data android:scheme="https" android:host="${APP_LINK_HOST}" android:pathPrefix="/join" />
             </intent-filter>
+            <!-- Custom scheme: hosting landing page fallback (tripplanner://join/{code}) and the
+                 event links inside the ICS feed (tripplanner://trip/{tripId}/stop/{stopId}, design §8.6) -->
+            <intent-filter>
+                <action android:name="android.intent.action.VIEW" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <category android:name="android.intent.category.BROWSABLE" />
+                <data android:scheme="tripplanner" />
+            </intent-filter>
         </activity>
         <!-- "Time to leave" reminders: inexact alarms delivered here (design v1.1 §8.5) -->
         <receiver

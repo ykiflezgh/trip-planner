@@ -4,7 +4,7 @@
  * (`firebase functions:secrets:set ROUTES_API_KEY`), never in source.
  * App Check: set enforceAppCheck on every callable before launch (§11).
  */
-import { onCall, HttpsError } from "firebase-functions/v2/https";
+import { onCall, onRequest, HttpsError } from "firebase-functions/v2/https";
 import { onDocumentCreated, onDocumentWrittenWithAuthContext, type DocumentSnapshot } from "firebase-functions/v2/firestore";
 import { onTaskDispatched } from "firebase-functions/v2/tasks";
 import { defineBoolean, defineSecret } from "firebase-functions/params";
@@ -16,6 +16,7 @@ import { getFunctions } from "firebase-admin/functions";
 import * as crypto from "node:crypto";
 import { needsDigest, planNotification, tokensToPrune, type BurstWindow, type EventFacts } from "./burst";
 import { buildMessage, type Notice } from "./notifications";
+import { buildFeed, etagOf, newToken, tokenHash, type FeedDay, type FeedLeg, type FeedStop, type FeedTrip } from "./feed";
 import { MODES, adjacentPairs, computeMatrix, legId, legsFromMatrix, planLegs, type LegDoc, type StopPoint } from "./travel";
 
 initializeApp();
@@ -444,4 +445,86 @@ export const suggestDayOrder = onCall({ secrets: [GEMINI_API_KEY] }, async (req)
   // include the travel matrix in the prompt, then validate that orderedStopIds is a
   // permutation of `ids` before returning. Behind Remote Config flag suggest_order_enabled.
   return { orderedStopIds: ids, rationale: "placeholder: Gemini call not wired yet" };
+});
+
+/** Hosting domain that serves /cal/** (design §8.6); mirrors AppConfig.appLinkHost on the clients. */
+const FEED_HOST = process.env.APP_LINK_HOST ?? "tripplanner-dev-fe0a4.web.app";
+const FEED_MAX_AGE_S = 900;
+const FEED_MIN_INTERVAL_MS = 30_000;
+
+/**
+ * §8.6 — a member mints a private feed link for one trip. The token is returned once; only its
+ * hash is stored, so a lost link is replaced by creating a new one.
+ *
+ * Complexity:
+ * - Time: O(1) read + O(1) write.
+ * - Space: O(1).
+ */
+export const createCalendarFeed = onCall(async (req) => {
+  const uid = req.auth?.uid;
+  const tripId = String(req.data?.tripId ?? "");
+  if (!uid || !tripId) throw new HttpsError("unauthenticated", "sign in first");
+  const trip = await db.doc(`trips/${tripId}`).get();
+  if (!trip.exists || !(trip.get("memberIds") ?? []).includes(uid)) throw new HttpsError("permission-denied", "not a member");
+  const token = newToken();
+  await db.doc(`calendarFeeds/${tokenHash(token)}`).set({ tripId, uid, createdAt: FieldValue.serverTimestamp(), lastFetchedAt: null, revokedAt: null });
+  return { url: `https://${FEED_HOST}/cal/${token}.ics` };
+});
+
+/**
+ * §8.6 — revokes every feed the caller created for a trip.
+ *
+ * Complexity:
+ * - Time: O(F) for the caller's F feeds on the trip.
+ * - Space: O(F).
+ */
+export const revokeCalendarFeed = onCall(async (req) => {
+  const uid = req.auth?.uid;
+  const tripId = String(req.data?.tripId ?? "");
+  if (!uid || !tripId) throw new HttpsError("unauthenticated", "sign in first");
+  const feeds = await db.collection("calendarFeeds").where("uid", "==", uid).where("tripId", "==", tripId).where("revokedAt", "==", null).get();
+  const batch = db.batch();
+  feeds.docs.forEach((d) => batch.update(d.ref, { revokedAt: FieldValue.serverTimestamp() }));
+  await batch.commit();
+  return { revoked: feeds.size };
+});
+
+/**
+ * §8.6 — `GET /cal/{token}.ics` via the Hosting rewrite. 404 unless the feed exists, is not
+ * revoked and its owner is still a member. Runs the schedule engine's JS build, answers with
+ * an ETag (304 on match), private caching and a publish TTL; logs `lastFetchedAt` and refuses
+ * fetches closer than 30 s apart on the same token.
+ *
+ * Complexity:
+ * - Time: O(D · S) engine work plus the reads (trip, days, stops, travel).
+ * - Space: O(S).
+ */
+export const calendarFeed = onRequest({ cors: false }, async (req, res) => {
+  const match = /\/cal\/([A-Za-z0-9_-]{20,})\.ics$/.exec(req.path);
+  if (req.method !== "GET" && req.method !== "HEAD") { res.status(405).end(); return; }
+  if (!match) { res.status(404).end(); return; }
+  const feedRef = db.doc(`calendarFeeds/${tokenHash(match[1])}`);
+  const feed = await feedRef.get();
+  if (!feed.exists || feed.get("revokedAt")) { res.status(404).end(); return; }
+  const last = feed.get("lastFetchedAt")?.toMillis?.() ?? 0;
+  if (Date.now() - last < FEED_MIN_INTERVAL_MS) { res.status(429).set("Retry-After", "30").end(); return; }
+  const tripId = String(feed.get("tripId")), uid = String(feed.get("uid"));
+  const tripDoc = await db.doc(`trips/${tripId}`).get();
+  if (!tripDoc.exists || !(tripDoc.get("memberIds") ?? []).includes(uid)) { res.status(404).end(); return; }
+
+  const [stopsSnap, travelSnap, daysSnap] = await Promise.all([
+    db.collection(`trips/${tripId}/stops`).get(), db.collection(`trips/${tripId}/travel`).get(), db.collection(`trips/${tripId}/days`).get(),
+  ]);
+  const t = tripDoc.data()!;
+  const trip: FeedTrip = { id: tripId, name: String(t.name ?? ""), startDate: String(t.startDate ?? ""), endDate: String(t.endDate ?? ""), timeZone: String(t.timeZone ?? "UTC"), defaultDayStart: t.defaultDayStart, defaultDayEnd: t.defaultDayEnd, defaultTravelMode: t.defaultTravelMode };
+  const stops: FeedStop[] = stopsSnap.docs.map((d) => ({ id: d.id, name: String(d.get("name") ?? ""), kind: d.get("kind"), placeId: d.get("placeId") || undefined, address: d.get("address") || undefined, day: Number(d.get("day") ?? 0), order: String(d.get("order") ?? ""), durationMin: Number(d.get("durationMin") ?? 60), fixedStart: d.get("fixedStart") || undefined, modeToNext: d.get("modeToNext") || undefined, notes: d.get("notes") || undefined, updatedAt: d.get("updatedAt")?.toMillis?.() }));
+  const legs: FeedLeg[] = travelSnap.docs.map((d) => d.data() as FeedLeg);
+  const days: FeedDay[] = daysSnap.docs.map((d) => ({ day: Number(d.id), start: d.get("start"), end: d.get("end") }));
+
+  const body = buildFeed(trip, stops, legs, days, FEED_HOST).toString();
+  const etag = etagOf(body);
+  void feedRef.update({ lastFetchedAt: FieldValue.serverTimestamp() }).catch(() => undefined);
+  res.set("ETag", etag).set("Cache-Control", `private, max-age=${FEED_MAX_AGE_S}`).set("Content-Type", "text/calendar; charset=utf-8");
+  if (req.headers["if-none-match"] === etag) { res.status(304).end(); return; }
+  res.status(200).send(req.method === "HEAD" ? "" : body);
 });
