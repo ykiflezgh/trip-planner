@@ -7,6 +7,7 @@ import app.tripplanner.schedule.Schedule
 import app.tripplanner.shared.core.model.DayHoursDoc
 import app.tripplanner.shared.core.model.Stop
 import app.tripplanner.shared.feature.calendar.DaySchedules
+import app.tripplanner.shared.feature.reminders.SyncReminders
 import app.tripplanner.shared.core.model.TravelLeg
 import app.tripplanner.shared.core.model.TravelMode
 import app.tripplanner.shared.core.model.Trip
@@ -98,6 +99,7 @@ class TripDetailViewModel(
     private val auth: AuthRepository,
     private val config: AppConfig,
     private val users: UserRepository,
+    private val syncReminders: SyncReminders,
 ) : ViewModel() {
 
     private val log = Logger.withTag("TripDetail")
@@ -118,6 +120,8 @@ class TripDetailViewModel(
     private val muted = auth.user.flatMapLatest { u -> if (u == null) flowOf(false) else users.prefs(u.uid).map { tripId in it.mutedTripIds } }.catch { emit(false) }
 
     init {
+        // Any change to the open trip's schedule inputs re-syncs local reminders (design v1.1 §8.5).
+        viewModelScope.launch { combine(repo.stops(tripId), repo.travel(tripId), repo.days(tripId)) { _, _, _ -> }.collect { syncReminders.request("trip") } }
         // Writes apply locally at once; rejections arrive here later (design §7, §9).
         viewModelScope.launch {
             repo.writeFailures.collect { f ->

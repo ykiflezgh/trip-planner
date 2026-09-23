@@ -131,8 +131,18 @@ device-local time. `TimeDisplay.shift` converts a computed `DaySchedule` through
 and anchors it on the local date of the day's start, so a day that lands on another calendar day
 still draws as one grid; the grid measures minutes from that date. Nothing stored is converted: a
 drag-to-pin in local mode is converted back to trip wall-clock before the write, and the stop
-sheet's pin field is labelled with the trip zone. Not yet built from v1.1 Phase 3: reminders, the
-ICS feed Function, Gemini suggestions.
+sheet's pin field is labelled with the trip zone. **Reminders** (branch `reminders`, design §8.5): opt-in per user (`notificationPrefs.reminders {
+enabled, leadMin }`, trip-list menu switch + lead-time dialog). `ReminderPlanner` (pure, tested) turns
+the next 48 h of the user's trips into "Leave for X in N min" reminders fired N minutes before the
+computed leave time (start of the travel leg into a stop, else its start), capped at 60 earliest-first
+for iOS's 64-notification limit; `SyncReminders` re-plans on sign-in / preference change, app
+foreground, any change to the open trip and each activity push, and hands the set to a
+`ReminderScheduler` (Android: inexact `AlarmManager` alarms into `ReminderReceiver`, owned ids kept
+in SharedPreferences; iOS: `UNCalendarNotificationTrigger` via `ReminderBridge`). A tap opens the trip
+at that stop through the existing deep-link intake. Android alarms do not survive a reboot; the next
+app start re-syncs. Also fixed here: a cold-start deep link to a later day crashed the Material tab
+row (indicator indexed stale positions) - the indicator is now guarded. Not yet built from v1.1
+Phase 3: the ICS feed Function, Gemini suggestions.
 Still unverified: the Places call shapes in `shared/data/`. Cloud Functions in `firebase/functions/` still carry a TODO for Gemini.
 
 ## Layout

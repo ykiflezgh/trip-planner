@@ -9,12 +9,19 @@ import androidx.activity.result.contract.ActivityResultContracts
 import app.tripplanner.push.AndroidPushTokenProvider
 import app.tripplanner.push.TripMessagingService
 import app.tripplanner.shared.feature.links.DeepLinkIntake
+import app.tripplanner.shared.feature.reminders.SyncReminders
 import app.tripplanner.shared.platform.PushTokenProvider
 import org.koin.android.ext.android.inject
 
 class MainActivity : ComponentActivity() {
     private val intake: DeepLinkIntake by inject()
     private val push: PushTokenProvider by inject()
+    private val syncReminders: SyncReminders by inject()
+
+    override fun onResume() {
+        super.onResume()
+        syncReminders.request("foreground") // design v1.1 §8.5: resync on app start and foreground
+    }
 
     // POST_NOTIFICATIONS (Android 13+): the result lands in the provider's pending request.
     private val notificationPermission =

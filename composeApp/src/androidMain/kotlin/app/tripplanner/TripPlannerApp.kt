@@ -27,6 +27,7 @@ class TripPlannerApp : Application() {
         }
         registerActivityLifecycleCallbacks(get<CurrentActivity>())
         TripMessagingService.ensureChannel(this)
+        app.tripplanner.reminders.ReminderReceiver.ensureChannel(this)
     }
 
     private fun metaData(name: String): String =

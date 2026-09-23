@@ -72,6 +72,8 @@ class TripMessagingService : FirebaseMessagingService() {
             .build()
         NotificationManagerCompat.from(this).notify(payload.notificationId, notification)
         log.i { "notified ${payload.kind} trip=${payload.tripId} count=${payload.count}" }
+        // The same message re-syncs local reminders (design v1.1 §8.5, §10).
+        runCatching { org.koin.mp.KoinPlatform.getKoin().get<app.tripplanner.shared.feature.reminders.SyncReminders>().request("push") }
     }
 
     companion object {

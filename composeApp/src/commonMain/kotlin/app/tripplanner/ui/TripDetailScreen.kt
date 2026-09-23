@@ -26,6 +26,8 @@ import kotlinx.datetime.LocalDateTime
 import kotlinx.datetime.TimeZone
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.material3.TabRowDefaults
+import androidx.compose.material3.TabRowDefaults.tabIndicatorOffset
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.Box
@@ -475,7 +477,14 @@ private fun DayHoursDialog(label: String, start: String, end: String, onSave: (S
  */
 @Composable
 private fun DayTabs(trip: Trip?, dayCount: Int, selected: Int, onSelect: (Int) -> Unit) {
-    ScrollableTabRow(selectedTabIndex = selected.coerceIn(0, (dayCount - 1).coerceAtLeast(0)), edgePadding = 8.dp) {
+    val index = selected.coerceIn(0, (dayCount - 1).coerceAtLeast(0))
+    ScrollableTabRow(
+        selectedTabIndex = index,
+        edgePadding = 8.dp,
+        // A deep link can select a later day in the same frame the trip document (and its day
+        // count) arrives; the row's positions still belong to the previous layout, so guard the index.
+        indicator = { positions -> if (index < positions.size) TabRowDefaults.SecondaryIndicator(Modifier.tabIndicatorOffset(positions[index])) },
+    ) {
         repeat(dayCount) { day ->
             Tab(
                 selected = day == selected,

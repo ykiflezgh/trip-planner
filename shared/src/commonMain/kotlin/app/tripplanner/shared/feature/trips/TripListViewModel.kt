@@ -2,6 +2,8 @@ package app.tripplanner.shared.feature.trips
 
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import app.tripplanner.shared.core.model.NotificationPrefs
+import app.tripplanner.shared.core.model.ReminderPrefs
 import app.tripplanner.shared.core.model.Trip
 import app.tripplanner.shared.data.AuthRepository
 import app.tripplanner.shared.data.TripRepository
@@ -29,6 +31,8 @@ data class TripListUiState(
     val signingIn: Boolean = false,
     /** `users/{uid}.notificationPrefs.push` (design §10). */
     val pushEnabled: Boolean = true,
+    /** "Time to leave" reminders (design v1.1 §8.5). */
+    val reminders: ReminderPrefs = ReminderPrefs(),
     val error: String? = null,
 )
 
@@ -57,8 +61,8 @@ class TripListViewModel(
                 .map { signedIn.copy(trips = it) }
                 // e.g. PERMISSION_DENIED until firestore.rules are deployed: keep the screen alive.
                 .catch { emit(signedIn.copy(error = it.message ?: "Could not load trips")) }
-            val prefs = users.prefs(user.uid).map { it.push }.catch { emit(true) }
-            combine(trips, prefs) { t, p -> t.copy(pushEnabled = p) }
+            val prefs = users.prefs(user.uid).catch { emit(NotificationPrefs()) }
+            combine(trips, prefs) { t, p -> t.copy(pushEnabled = p.push, reminders = p.reminders) }
         }
     }
 
@@ -122,6 +126,21 @@ class TripListViewModel(
         viewModelScope.launch {
             runCatching { users.setPushEnabled(uid, enabled) }
                 .onFailure { local.value = local.value.copy(error = it.message ?: "Could not update notifications") }
+        }
+    }
+
+    /**
+     * Reminder preference (design v1.1 §8.5); SyncReminders reacts to the stored change.
+     *
+     * Complexity:
+     * - **Time:** O(1) merge write.
+     * - **Space:** O(1).
+     */
+    fun setReminders(enabled: Boolean, leadMin: Int) {
+        val uid = auth.currentUser?.uid ?: return
+        viewModelScope.launch {
+            runCatching { users.setReminders(uid, enabled, leadMin.coerceIn(1, 24 * 60)) }
+                .onFailure { local.value = local.value.copy(error = it.message ?: "Could not update reminders") }
         }
     }
 

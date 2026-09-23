@@ -29,6 +29,10 @@
                 <data android:scheme="https" android:host="${APP_LINK_HOST}" android:pathPrefix="/join" />
             </intent-filter>
         </activity>
+        <!-- "Time to leave" reminders: inexact alarms delivered here (design v1.1 §8.5) -->
+        <receiver
+            android:name=".reminders.ReminderReceiver"
+            android:exported="false" />
         <!-- FCM: token refresh + data messages rendered as local notifications (design §6.4, §10) -->
         <service
             android:name=".push.TripMessagingService"

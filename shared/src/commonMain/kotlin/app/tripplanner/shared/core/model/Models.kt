@@ -112,11 +112,19 @@ data class ActivityEvent(
     val createdAt: BaseTimestamp? = null,
 )
 
-/** `users/{uid}.notificationPrefs` (design §7, §10). Absent fields mean "on". */
+/** "Time to leave" reminders (design v1.1 §8.5): opt-in, fired [leadMin] before the computed leave time. */
+@Serializable
+data class ReminderPrefs(
+    val enabled: Boolean = false,
+    val leadMin: Int = 15,
+)
+
+/** `users/{uid}.notificationPrefs` (design §7, §10). Absent fields mean "on" (push) / "off" (reminders). */
 @Serializable
 data class NotificationPrefs(
     val push: Boolean = true,
     val mutedTripIds: List<String> = emptyList(),
+    val reminders: ReminderPrefs = ReminderPrefs(),
 )
 
 /** `users/{uid}` — profile the Functions denormalize into events, FCM tokens, prefs (design §7). */

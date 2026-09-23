@@ -23,6 +23,7 @@ interface UserRepository {
     suspend fun unregisterToken(uid: String, token: String)
     suspend fun setPushEnabled(uid: String, enabled: Boolean)
     suspend fun setTripMuted(uid: String, tripId: String, muted: Boolean)
+    suspend fun setReminders(uid: String, enabled: Boolean, leadMin: Int)
 
     companion object {
         /** Design §10: "keep at most five per user". */
@@ -101,6 +102,15 @@ class FirestoreUserRepository : UserRepository {
      * - **Time:** O(1) merge write.
      * - **Space:** O(1).
      */
+    /**
+     * Complexity:
+     * - **Time:** O(1) merge write.
+     * - **Space:** O(1).
+     */
+    override suspend fun setReminders(uid: String, enabled: Boolean, leadMin: Int) {
+        doc(uid).set(mapOf("notificationPrefs" to mapOf("reminders" to mapOf("enabled" to enabled, "leadMin" to leadMin))), merge = true)
+    }
+
     override suspend fun setTripMuted(uid: String, tripId: String, muted: Boolean) {
         val op = if (muted) FieldValue.arrayUnion(tripId) else FieldValue.arrayRemove(tripId)
         doc(uid).set(mapOf("notificationPrefs" to mapOf("mutedTripIds" to op)), merge = true)
