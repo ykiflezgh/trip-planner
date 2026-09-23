@@ -84,7 +84,8 @@ class AddStopViewModel(
 
     /**
      * Details fetch (closes the billing session) then a single stop write after [afterOrder] on
-     * [day]. Firestore acknowledges from the local cache first, so the stop shows offline (§9).
+     * [day]. The write applies locally at once and the sheet closes on the new id; the row shows
+     * "syncing…" until the server acknowledges, and a rejection surfaces on the detail screen (§9).
      *
      * Complexity:
      * - **Time:** O(1) network details call + O(L) order key + O(1) document write.

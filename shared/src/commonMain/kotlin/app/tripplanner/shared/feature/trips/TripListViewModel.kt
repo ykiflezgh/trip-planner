@@ -36,6 +36,11 @@ class TripListViewModel(
     private data class Local(val signingIn: Boolean = false, val error: String? = null)
     private val local = MutableStateFlow(Local())
 
+    init {
+        // Writes apply locally at once; rejections (e.g. rules) arrive here later (design §9).
+        viewModelScope.launch { repo.writeFailures.collect { f -> local.value = local.value.copy(error = "Could not ${f.operation}: ${f.message}") } }
+    }
+
     @OptIn(ExperimentalCoroutinesApi::class)
     private val remote: Flow<TripListUiState> = auth.user.flatMapLatest { user ->
         if (user == null) {

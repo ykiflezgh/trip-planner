@@ -89,6 +89,15 @@ fun TripDetailScreen(tripId: String, name: String, onBack: () -> Unit) {
     LaunchedEffect(state.message) {
         state.message?.let { snackbar.showSnackbar(it); vm.consumeMessage() }
     }
+    // Pending for a while although online: the connection is probably stalled - offer a kick.
+    var staleSync by remember { mutableStateOf(false) }
+    LaunchedEffect(state.pendingSync, state.online) {
+        staleSync = false
+        if (state.pendingSync && state.online) {
+            kotlinx.coroutines.delay(STALE_SYNC_AFTER_MS)
+            staleSync = true
+        }
+    }
 
     Scaffold(
         topBar = {
@@ -104,6 +113,14 @@ fun TripDetailScreen(tripId: String, name: String, onBack: () -> Unit) {
         snackbarHost = { SnackbarHost(snackbar) },
     ) { padding ->
         Column(Modifier.fillMaxSize().padding(padding)) {
+            if (staleSync) {
+                Surface(color = MaterialTheme.colorScheme.errorContainer, modifier = Modifier.fillMaxWidth()) {
+                    Row(Modifier.fillMaxWidth().padding(start = 16.dp, end = 4.dp), verticalAlignment = Alignment.CenterVertically) {
+                        Text("Still syncing\u2026 this is taking longer than usual", Modifier.weight(1f), style = MaterialTheme.typography.bodySmall)
+                        TextButton(onClick = { vm.retrySync(); staleSync = false }) { Text("Retry") }
+                    }
+                }
+            }
             if (!state.online) {
                 Surface(color = MaterialTheme.colorScheme.tertiaryContainer, modifier = Modifier.fillMaxWidth()) {
                     Text(
@@ -184,6 +201,7 @@ fun TripDetailScreen(tripId: String, name: String, onBack: () -> Unit) {
 }
 
 private val MAP_HEIGHT = 320.dp
+private const val STALE_SYNC_AFTER_MS = 30_000L
 
 /** testTag is Android-only semantics today; keep the call site tidy without pulling ui-test deps. */
 private fun Modifier.testTagCompat(@Suppress("UNUSED_PARAMETER") tag: String): Modifier = this

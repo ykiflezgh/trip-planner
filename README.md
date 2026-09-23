@@ -69,7 +69,12 @@ trip detail and disables Places search with a message; the repository logs `list
 so listener scoping can be checked in the device log (both trip listeners detach ~5 s after
 leaving the screen, `WhileSubscribed`). Verified with an airplane-mode reorder -> relaunch ->
 reconnect round trip on Android. Calendar export (Phase 2) must reuse the same gate.
-All five Phase 1 roadmap items are on this branch.
+**Sync-stall fixes:** `FirestoreNetworkSync` follows the connectivity monitor and disables /
+re-enables Firestore's network on transitions (the SDK's gRPC streams can otherwise stay
+closed for many minutes after an abrupt network change, leaving writes queued); repository
+writes are fire-and-forget with rejections on `TripRepository.writeFailures` (surfaced as
+messages), so create-trip / add-stop / reorder never block on the server ack; the trip detail
+shows "Still syncing… Retry" after 30 s pending while online.
 Still unverified: the Functions/Places/Calendar call shapes in `shared/data/`. Cloud Functions in `firebase/functions/` are compile-shaped
 TypeScript with TODOs where Phase 2/3 work lands (Routes, Gemini, burst collapsing).
 

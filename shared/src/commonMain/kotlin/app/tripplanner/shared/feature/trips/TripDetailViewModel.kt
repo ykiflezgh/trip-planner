@@ -4,6 +4,7 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import app.tripplanner.shared.core.model.Stop
 import app.tripplanner.shared.core.model.Trip
+import app.tripplanner.shared.data.FirestoreNetworkSync
 import app.tripplanner.shared.data.TripRepository
 import app.tripplanner.shared.platform.ConnectivityMonitor
 import co.touchlab.kermit.Logger
@@ -39,6 +40,7 @@ class TripDetailViewModel(
     private val tripId: String,
     private val repo: TripRepository,
     connectivity: ConnectivityMonitor,
+    private val networkSync: FirestoreNetworkSync,
 ) : ViewModel() {
 
     private val log = Logger.withTag("TripDetail")
@@ -50,6 +52,15 @@ class TripDetailViewModel(
         .map { stops -> TripDetailUiState(loading = false, stopsByDay = stops.groupBy { it.day }) }
         .catch { emit(TripDetailUiState(loading = false, error = it.message ?: "Could not load stops")) }
     private val trip = repo.trip(tripId).catch { emit(null) }
+
+    init {
+        // Writes apply locally at once; rejections arrive here later (design §7, §9).
+        viewModelScope.launch {
+            repo.writeFailures.collect { f ->
+                message.value = if (f.notFound) "That stop was removed by another member" else "Could not ${f.operation}: ${f.message}"
+            }
+        }
+    }
 
     /**
      * UI state stream. Emits a new [TripDetailUiState] when stops or the selection change.
@@ -88,23 +99,16 @@ class TripDetailViewModel(
     }
 
     /**
-     * Reorder = one write of a new fractional key; neighbours come from current UI order.
-     * A NOT_FOUND from Firestore means another member deleted the stop: the local change is
-     * dropped by the next snapshot and the user gets a message (design §7).
+     * Reorder = one write of a new fractional key; neighbours come from current UI order. The
+     * write applies locally at once; a NOT_FOUND (deleted by another member) surfaces via
+     * [TripRepository.writeFailures] as a message.
      *
      * Complexity:
-     * - **Time:** O(L) where L is the length of the fractional index key (effectively O(1)) + one document write.
+     * - **Time:** O(L) where L is the length of the fractional index key (effectively O(1)) + one queued write.
      * - **Space:** O(1) auxiliary heap space.
      */
     fun moveStop(stopId: String, day: Int, afterOrder: String?, beforeOrder: String?) {
-        viewModelScope.launch {
-            try {
-                repo.moveStop(tripId, stopId, day, afterOrder, beforeOrder)
-            } catch (e: Exception) {
-                log.w { "moveStop failed: ${e.message}" }
-                message.value = if (e.isNotFound()) "That stop was removed by another member" else (e.message ?: "Could not move stop")
-            }
-        }
+        repo.moveStop(tripId, stopId, day, afterOrder, beforeOrder)
     }
 
     /**
@@ -126,14 +130,17 @@ class TripDetailViewModel(
      */
     fun deleteStop(stopId: String) {
         if (selectedStopId.value == stopId) selectedStopId.value = null
-        viewModelScope.launch {
-            try {
-                repo.deleteStop(tripId, stopId)
-            } catch (e: Exception) {
-                message.value = e.message ?: "Could not remove stop"
-            }
-        }
+        repo.deleteStop(tripId, stopId)
     }
+
+    /**
+     * "Still syncing" retry: forces Firestore to drop and re-open its connection.
+     *
+     * Complexity:
+     * - **Time:** O(1).
+     * - **Space:** O(1).
+     */
+    fun retrySync() = networkSync.retry()
 
     /**
      * Complexity:
@@ -143,8 +150,4 @@ class TripDetailViewModel(
     fun consumeMessage() {
         message.value = null
     }
-
-    private fun Exception.isNotFound(): Boolean =
-        (message ?: "").contains("NOT_FOUND", ignoreCase = true) ||
-            (message ?: "").contains("No document to update", ignoreCase = true)
 }

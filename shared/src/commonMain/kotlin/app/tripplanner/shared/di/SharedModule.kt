@@ -2,6 +2,9 @@ package app.tripplanner.shared.di
 
 import app.tripplanner.shared.data.AuthRepository
 import app.tripplanner.shared.data.CalendarApi
+import app.tripplanner.shared.data.FirestoreNetwork
+import app.tripplanner.shared.data.FirestoreNetworkSync
+import app.tripplanner.shared.data.GitLiveFirestoreNetwork
 import app.tripplanner.shared.data.FirestoreTripRepository
 import app.tripplanner.shared.data.PlacesApi
 import app.tripplanner.shared.data.PlanningFunctions
@@ -32,11 +35,14 @@ fun sharedModule(placesApiKey: String) = module {
     }
     single<TripRepository> { FirestoreTripRepository() }
     single { AuthRepository(get()) }
+    single<FirestoreNetwork> { GitLiveFirestoreNetwork() }
+    // Process-lifetime: follows connectivity and kicks Firestore's connection (design §9).
+    single(createdAtStart = true) { FirestoreNetworkSync(get(), get()).also { it.start() } }
     single { PlacesApi(get(), placesApiKey) }
     single { CalendarApi(get()) }
     single { PlanningFunctions() }
     viewModel { TripListViewModel(get(), get()) }
     viewModel { NewTripViewModel(get(), get()) }
-    viewModel { (tripId: String) -> TripDetailViewModel(tripId, get(), get()) }
+    viewModel { (tripId: String) -> TripDetailViewModel(tripId, get(), get(), get()) }
     viewModel { (tripId: String) -> AddStopViewModel(tripId, get(), get(), get(), get()) }
 }

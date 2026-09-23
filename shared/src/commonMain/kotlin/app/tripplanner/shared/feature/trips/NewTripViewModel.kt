@@ -1,14 +1,12 @@
 package app.tripplanner.shared.feature.trips
 
 import androidx.lifecycle.ViewModel
-import androidx.lifecycle.viewModelScope
 import app.tripplanner.shared.data.AuthRepository
 import app.tripplanner.shared.data.TripRepository
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.update
-import kotlinx.coroutines.launch
 import kotlinx.datetime.LocalDate
 import kotlinx.datetime.TimeZone
 
@@ -52,8 +50,9 @@ class NewTripViewModel(
     fun setDates(start: LocalDate?, end: LocalDate?) = _state.update { it.copy(startDate = start, endDate = end, error = null) }
 
     /**
-     * Writes the trip; Firestore acknowledges from the local cache first, so this resolves
-     * offline too (design §9).
+     * Issues the trip write and moves on with the id: the write applies locally at once and the
+     * list shows it as "syncing…" until the server acknowledges (design §9). A rejection
+     * surfaces through [TripRepository.writeFailures] on the list screen.
      *
      * Complexity:
      * - **Time:** O(1) document write plus the name copy.
@@ -64,15 +63,8 @@ class NewTripViewModel(
         if (!s.canCreate) return
         val uid = auth.currentUser?.uid ?: run { _state.update { it.copy(error = "Sign in first") }; return }
         val trip = NewTrip.build(uid, s.name, s.startDate!!, s.endDate!!, TimeZone.currentSystemDefault())
-        viewModelScope.launch {
-            _state.update { it.copy(creating = true, error = null) }
-            try {
-                val id = repo.createTrip(trip)
-                _state.update { it.copy(creating = false, createdTripId = id) }
-            } catch (e: Exception) {
-                _state.update { it.copy(creating = false, error = e.message ?: "Could not create trip") }
-            }
-        }
+        val id = repo.createTrip(trip)
+        _state.update { it.copy(creating = false, createdTripId = id) }
     }
 
     /**
