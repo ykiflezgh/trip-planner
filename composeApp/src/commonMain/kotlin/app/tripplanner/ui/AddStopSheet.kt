@@ -1,6 +1,8 @@
 package app.tripplanner.ui
 
 import androidx.compose.foundation.clickable
+import app.tripplanner.schedule.Schedule
+import androidx.compose.material3.Button
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -56,6 +58,8 @@ fun AddStopSheet(
     stopsByDay: Map<Int, List<Stop>>,
     initialDay: Int,
     onAdded: (stopId: String) -> Unit,
+    /** Where a pinned custom entry belongs in the day's order: (afterOrder, beforeOrder) around its time (design v1.1 §6.6). */
+    neighboursAt: (day: Int, hhmm: String) -> Pair<String?, String?> = { d, _ -> stopsByDay[d]?.maxOfOrNull { it.order } to null },
     onDismiss: () -> Unit,
 ) {
     val vm: AddStopViewModel = koinViewModel(key = "add-stop-$tripId", parameters = { parametersOf(tripId) })
@@ -82,6 +86,34 @@ fun AddStopSheet(
                 }
             }
             Spacer(Modifier.height(8.dp))
+            // Place from Places, or a custom entry with no place (design v1.1 §3.1 item 3).
+            var custom by remember { mutableStateOf(false) }
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                FilterChip(selected = !custom, onClick = { custom = false }, label = { Text("Place") })
+                FilterChip(selected = custom, onClick = { custom = true }, label = { Text("Custom entry") })
+            }
+            Spacer(Modifier.height(8.dp))
+            if (custom) {
+                var name by remember { mutableStateOf("") }
+                var duration by remember { mutableStateOf("60") }
+                var at by remember { mutableStateOf("") }
+                OutlinedTextField(value = name, onValueChange = { name = it }, label = { Text("Title") }, placeholder = { Text("Flight to Rome, free time, check-in\u2026") }, singleLine = true, modifier = Modifier.fillMaxWidth())
+                Spacer(Modifier.height(8.dp))
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    OutlinedTextField(value = duration, onValueChange = { duration = it.filter(Char::isDigit).take(4) }, label = { Text("Minutes") }, singleLine = true, modifier = Modifier.weight(1f))
+                    OutlinedTextField(value = at, onValueChange = { at = it.take(5) }, label = { Text("Pin at (optional)") }, placeholder = { Text("HH:mm") }, singleLine = true, isError = at.isNotBlank() && Schedule.parseTime(at) == null, modifier = Modifier.weight(1f))
+                }
+                Spacer(Modifier.height(12.dp))
+                Button(
+                    onClick = {
+                        val pinned = at.takeIf { Schedule.parseTime(it) != null }
+                        val (afterOrder, beforeOrder) = if (pinned != null) neighboursAt(day, pinned) else (stopsByDay[day]?.maxOfOrNull { it.order } to null)
+                        vm.addCustom(name, duration.toIntOrNull() ?: 60, day, afterOrder, pinned, beforeOrder)
+                    },
+                    enabled = name.isNotBlank() && (at.isBlank() || Schedule.parseTime(at) != null),
+                ) { Text("Add entry") }
+                return@Column
+            }
             OutlinedTextField(
                 value = state.query,
                 onValueChange = vm::setQuery,

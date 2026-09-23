@@ -118,9 +118,29 @@ class AddStopViewModel(
     }
 
     /**
+     * Custom entry with no place (design v1.1 §3.1 item 3): "Flight to Rome", "Free time". Works
+     * offline like any stop write; the travel trigger skips it.
+     *
+     * Complexity:
+     * - **Time:** O(1) queued write.
+     * - **Space:** O(1).
+     */
+    fun addCustom(name: String, durationMin: Int, day: Int, afterOrder: String?, fixedStart: String? = null, beforeOrder: String? = null): Boolean {
+        val title = name.trim().take(MAX_CUSTOM_NAME)
+        if (title.isBlank()) return false
+        val uid = auth.currentUser?.uid ?: run { _state.update { it.copy(error = "Sign in first") }; return false }
+        val stop = Stop(kind = Stop.KIND_CUSTOM, name = title, day = day, durationMin = durationMin.coerceIn(5, 1440), fixedStart = fixedStart, addedBy = uid)
+        val id = repo.addStop(tripId, stop, afterOrder = afterOrder, beforeOrder = beforeOrder)
+        _state.update { it.copy(addedStopId = id) }
+        return true
+    }
+
+    /**
      * Complexity:
      * - **Time:** O(1).
      * - **Space:** O(1).
      */
     fun consumeAdded() = _state.update { it.copy(addedStopId = null) }
+
+    companion object { const val MAX_CUSTOM_NAME = 80 }
 }

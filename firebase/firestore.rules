@@ -21,6 +21,11 @@ service cloud.firestore {
         allow read:  if isMember(trip(tripId));
         allow write: if role(trip(tripId)) in ['owner', 'editor'];
       }
+      // Per-day hours (design v1.1 §7): editors set them, everyone reads them.
+      match /days/{day} {
+        allow read:  if isMember(trip(tripId));
+        allow write: if role(trip(tripId)) in ['owner', 'editor'];
+      }
       match /activity/{id} { allow read: if isMember(trip(tripId)); allow write: if false; }
       match /travel/{id}   { allow read: if isMember(trip(tripId)); allow write: if false; }
     }

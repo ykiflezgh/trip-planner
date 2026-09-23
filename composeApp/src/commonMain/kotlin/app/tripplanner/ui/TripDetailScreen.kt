@@ -10,6 +10,15 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
+import app.tripplanner.schedule.DaySchedule
+import app.tripplanner.schedule.Schedule
+import app.tripplanner.schedule.TimedEntry
+import app.tripplanner.schedule.Warning
+import app.tripplanner.shared.core.util.FractionalIndex
+import app.tripplanner.ui.calendar.DayView
+import kotlinx.datetime.LocalTime
+import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.Button
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.Box
@@ -92,6 +101,12 @@ fun TripDetailScreen(tripId: String, name: String, focusStopId: String? = null, 
     val state by vm.state.collectAsStateWithLifecycle()
     val title = state.trip?.name?.takeIf { it.isNotBlank() } ?: name
     var showMenu by remember { mutableStateOf(false) }
+    var showDayHours by remember { mutableStateOf(false) }
+    // Agenda (list) or Day (time grid) - two views of the same computed schedule (design v1.1 §6.6).
+    var dayView by remember { mutableStateOf(false) }
+    val schedule = state.schedule
+    val timed = remember(schedule) { schedule?.entries?.associateBy { it.input.id }.orEmpty() }
+    val warningsById = remember(schedule) { schedule?.warnings?.groupBy { it.entryId }.orEmpty() }
     // Notification deep link (design §10): select the changed stop once it is loaded.
     LaunchedEffect(focusStopId) { focusStopId?.let(vm::focusStop) }
     val dayStops = state.stopsForSelectedDay
@@ -144,6 +159,9 @@ fun TripDetailScreen(tripId: String, name: String, focusStopId: String? = null, 
                             text = { Text(if (state.muted) "Unmute notifications" else "Mute notifications") },
                             onClick = { showMenu = false; vm.setMuted(!state.muted) },
                         )
+                        if (state.canEdit) {
+                            DropdownMenuItem(text = { Text("Day hours\u2026") }, onClick = { showMenu = false; showDayHours = true })
+                        }
                     }
                 },
             )
@@ -172,6 +190,29 @@ fun TripDetailScreen(tripId: String, name: String, focusStopId: String? = null, 
                 }
             }
             DayTabs(trip = state.trip, dayCount = state.dayCount, selected = state.selectedDay, onSelect = vm::selectDay)
+            Row(Modifier.padding(horizontal = 16.dp, vertical = 4.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                FilterChip(selected = !dayView, onClick = { dayView = false }, label = { Text("Agenda") })
+                FilterChip(selected = dayView, onClick = { dayView = true }, label = { Text("Day") })
+                schedule?.let { sch ->
+                    Text(
+                        "${Schedule.formatTime(sch.hours.start)} \u2013 ${Schedule.formatTime(sch.hours.end)}" + if (sch.warnings.isNotEmpty()) "  \u00b7 \u26A0 ${sch.warnings.size}" else "",
+                        Modifier.align(Alignment.CenterVertically),
+                        style = MaterialTheme.typography.labelMedium,
+                        color = if (sch.warnings.isNotEmpty()) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                }
+            }
+            if (dayView && schedule != null) {
+                DayView(
+                    schedule = schedule,
+                    selectedId = state.selectedStopId,
+                    canEdit = state.canEdit,
+                    onSelect = vm::selectStop,
+                    onPin = { id, start -> vm.pinEntry(id, Schedule.formatTime(start), chronologicalOrder(schedule, dayStops, id, start)) },
+                    onResize = vm::resizeEntry,
+                    modifier = Modifier.fillMaxSize(),
+                )
+            } else
             LazyColumn(Modifier.fillMaxSize().testTagCompat("stop_list"), state = listState) {
                 item(key = "map") {
                     Box(Modifier.fillMaxWidth().height(MAP_HEIGHT)) {
@@ -209,6 +250,8 @@ fun TripDetailScreen(tripId: String, name: String, focusStopId: String? = null, 
                         }
                         StopRow(
                             stop = stop,
+                            timed = timed[stop.id],
+                            warnings = warningsById[stop.id].orEmpty(),
                             position = localStops.indexOfFirst { it.id == stop.id } + 1,
                             selected = stop.id == state.selectedStopId,
                             dragging = isDragging,
@@ -226,6 +269,15 @@ fun TripDetailScreen(tripId: String, name: String, focusStopId: String? = null, 
         }
     }
 
+    if (showDayHours) {
+        DayHoursDialog(
+            label = dayLabel(state.trip, state.selectedDay),
+            start = schedule?.hours?.start?.let(Schedule::formatTime) ?: state.trip?.defaultDayStart.orEmpty(),
+            end = schedule?.hours?.end?.let(Schedule::formatTime) ?: state.trip?.defaultDayEnd.orEmpty(),
+            onSave = { st, en -> vm.setDayHours(state.selectedDay, st, en); showDayHours = false },
+            onDismiss = { showDayHours = false },
+        )
+    }
     if (showAddStop) {
         AddStopSheet(
             tripId = tripId,
@@ -233,6 +285,16 @@ fun TripDetailScreen(tripId: String, name: String, focusStopId: String? = null, 
             stopsByDay = state.stopsByDay,
             initialDay = state.selectedDay,
             onAdded = { id -> showAddStop = false; vm.selectStop(id) },
+            neighboursAt = { day, hhmm ->
+                val sch = state.scheduleFor(day)
+                val t = Schedule.parseTime(hhmm)
+                if (sch == null || t == null) (state.stopsByDay[day]?.maxOfOrNull { it.order } to null)
+                else {
+                    val stops = state.stopsByDay[day].orEmpty()
+                    val orderOf = { id: String -> stops.firstOrNull { it.id == id }?.order }
+                    sch.entries.lastOrNull { it.start.time <= t }?.input?.id?.let(orderOf) to sch.entries.firstOrNull { it.start.time > t }?.input?.id?.let(orderOf)
+                }
+            },
             onDismiss = { showAddStop = false },
         )
     } else {
@@ -241,6 +303,10 @@ fun TripDetailScreen(tripId: String, name: String, focusStopId: String? = null, 
                 stop = stop,
                 trip = state.trip,
                 dayCount = state.dayCount,
+                timed = timed[stop.id],
+                canEdit = state.canEdit,
+                onPin = { hhmm -> vm.pinEntry(stop.id, hhmm, null) },
+                onUnpin = { vm.unpinEntry(stop.id) },
                 onMoveToDay = { day -> vm.moveToDay(stop.id, day); vm.selectDay(day) },
                 onRemove = { vm.deleteStop(stop.id) },
                 onDismiss = { vm.selectStop(null) },
@@ -293,6 +359,52 @@ private fun TravelConnector(legs: List<Pair<TravelMode, TravelLeg?>>) {
 }
 
 /**
+ * Order key that keeps the list chronological after a pin (design v1.1 §6.6): the entry lands
+ * between the entries whose starts bracket the new time, or stays where it is if that is already
+ * the case.
+ *
+ * Complexity:
+ * - **Time:** O(E) over the day's E entries.
+ * - **Space:** O(E).
+ */
+private fun chronologicalOrder(schedule: DaySchedule, stops: List<Stop>, stopId: String, start: LocalTime): String? {
+    val others = schedule.entries.filter { it.input.id != stopId }
+    val before = others.lastOrNull { it.start.time <= start }
+    val after = others.firstOrNull { it.start.time > start }
+    val current = schedule.entries.indexOfFirst { it.input.id == stopId }
+    val beforeIdx = before?.let { schedule.entries.indexOf(it) } ?: -1
+    if (beforeIdx == current - 1) return null // already in place
+    val orderOf = { id: String -> stops.firstOrNull { it.id == id }?.order }
+    return FractionalIndex.between(before?.input?.id?.let(orderOf), after?.input?.id?.let(orderOf))
+}
+
+/**
+ * Per-day start and end (design v1.1 §8.4 step 4).
+ *
+ * Complexity:
+ * - **Recomposition Time:** O(1) per keystroke.
+ * - **Composition Memory:** O(1).
+ */
+@Composable
+private fun DayHoursDialog(label: String, start: String, end: String, onSave: (String, String) -> Unit, onDismiss: () -> Unit) {
+    var s by remember { mutableStateOf(start) }
+    var e by remember { mutableStateOf(end) }
+    val valid = Schedule.parseTime(s) != null && Schedule.parseTime(e) != null
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("Day hours \u00b7 $label") },
+        text = {
+            Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                OutlinedTextField(value = s, onValueChange = { s = it.take(5) }, label = { Text("Start") }, placeholder = { Text("09:00") }, singleLine = true, modifier = Modifier.weight(1f))
+                OutlinedTextField(value = e, onValueChange = { e = it.take(5) }, label = { Text("End") }, placeholder = { Text("21:00") }, singleLine = true, modifier = Modifier.weight(1f))
+            }
+        },
+        confirmButton = { Button(onClick = { onSave(s, e) }, enabled = valid) { Text("Save") } },
+        dismissButton = { TextButton(onClick = onDismiss) { Text("Cancel") } },
+    )
+}
+
+/**
  * Day tabs labelled with the calendar date when the trip document is available.
  *
  * Complexity:
@@ -333,6 +445,8 @@ private fun dayLabel(trip: Trip?, day: Int): String {
 @Composable
 private fun ReorderableCollectionItemScope.StopRow(
     stop: Stop,
+    timed: TimedEntry?,
+    warnings: List<Warning>,
     position: Int,
     selected: Boolean,
     dragging: Boolean,
@@ -344,7 +458,29 @@ private fun ReorderableCollectionItemScope.StopRow(
             modifier = Modifier.clickable(onClick = onClick),
             leadingContent = { Text("$position", style = MaterialTheme.typography.titleMedium) },
             headlineContent = { Text(stop.name) },
-            supportingContent = { Text(stop.address + if (stop.pendingSync) "  \u00b7 syncing\u2026" else "") },
+            supportingContent = {
+                Column {
+                    timed?.let { t ->
+                        Text(
+                            (if (t.pinned) "\uD83D\uDCCC " else "") + Schedule.formatTime(t.start.time) + " \u2013 " + Schedule.formatTime(t.end.time) +
+                                (if (t.gapBeforeMin > 0) "  \u00b7 ${t.gapBeforeMin} min free before" else ""),
+                            style = MaterialTheme.typography.labelMedium,
+                        )
+                    }
+                    if (stop.kind != Stop.KIND_CUSTOM || stop.address.isNotBlank()) Text(stop.address + if (stop.pendingSync) "  \u00b7 syncing\u2026" else "")
+                    warnings.forEach { w ->
+                        Text(
+                            when (w) {
+                                is Warning.LateArrival -> "\u26A0 ${w.minutes} min late for the pinned time"
+                                is Warning.Overlap -> "\u26A0 overlaps the previous entry by ${w.minutes} min"
+                                is Warning.DayOverrun -> "\u26A0 runs ${w.minutes} min past the day's end"
+                            },
+                            style = MaterialTheme.typography.labelSmall,
+                            color = MaterialTheme.colorScheme.error,
+                        )
+                    }
+                }
+            },
             trailingContent = {
                 Text(
                     "≡",
@@ -375,6 +511,10 @@ private fun StopSheet(
     stop: Stop,
     trip: Trip?,
     dayCount: Int,
+    timed: TimedEntry?,
+    canEdit: Boolean,
+    onPin: (String) -> Unit,
+    onUnpin: () -> Unit,
     onMoveToDay: (Int) -> Unit,
     onRemove: () -> Unit,
     onDismiss: () -> Unit,
@@ -389,7 +529,28 @@ private fun StopSheet(
         Column(Modifier.fillMaxWidth().padding(horizontal = 24.dp).imePadding()) {
             Text(stop.name, style = MaterialTheme.typography.titleLarge)
             Text(stop.address, style = MaterialTheme.typography.bodyMedium)
-            Text("${dayLabel(trip, stop.day)} · ${stop.durationMin} min", style = MaterialTheme.typography.bodySmall)
+            Text(
+                "${dayLabel(trip, stop.day)} · ${stop.durationMin} min" +
+                    (timed?.let { "  \u00b7 ${Schedule.formatTime(it.start.time)} \u2013 ${Schedule.formatTime(it.end.time)}" } ?: ""),
+                style = MaterialTheme.typography.bodySmall,
+            )
+            if (canEdit) {
+                Spacer(Modifier.height(8.dp))
+                var pinText by remember(stop.id, stop.fixedStart) { mutableStateOf(stop.fixedStart ?: timed?.let { Schedule.formatTime(it.start.time) } ?: "") }
+                Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    OutlinedTextField(
+                        value = pinText,
+                        onValueChange = { pinText = it.take(5) },
+                        label = { Text(if (stop.fixedStart != null) "Pinned at" else "Pin to time") },
+                        placeholder = { Text("HH:mm") },
+                        singleLine = true,
+                        isError = pinText.isNotBlank() && Schedule.parseTime(pinText) == null,
+                        modifier = Modifier.width(140.dp),
+                    )
+                    TextButton(onClick = { onPin(pinText) }, enabled = Schedule.parseTime(pinText) != null && pinText != stop.fixedStart) { Text("Pin") }
+                    if (stop.fixedStart != null) TextButton(onClick = onUnpin) { Text("Unpin") }
+                }
+            }
             Spacer(Modifier.height(16.dp))
             OutlinedTextField(
                 value = note,

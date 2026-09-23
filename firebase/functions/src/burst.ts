@@ -21,6 +21,8 @@ export interface EventFacts {
   stopName: string;
   day: number;
   fromDay?: number;
+  /** Pinned "HH:mm" for entry_pinned events (design v1.1 §8.4). */
+  fixedStart?: string;
 }
 
 export interface BurstWindow {

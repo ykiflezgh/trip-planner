@@ -15,6 +15,7 @@ kotlin {
 
     sourceSets {
         commonMain.dependencies {
+            api(projects.schedule) // schedule engine (design v1.1 §6.5)
             implementation(libs.kotlinx.coroutines.core)
             implementation(libs.kotlinx.serialization.json)
             implementation(libs.kotlinx.datetime)
