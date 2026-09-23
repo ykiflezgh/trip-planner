@@ -1,27 +1,37 @@
 package app.tripplanner.ui
 
+import androidx.compose.material3.MaterialTheme
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalDensity
 import app.tripplanner.shared.core.model.Stop
 import com.google.android.gms.maps.CameraUpdateFactory
 import com.google.android.gms.maps.model.BitmapDescriptorFactory
-import com.google.android.gms.maps.model.CameraPosition
 import com.google.android.gms.maps.model.LatLng
+import com.google.android.gms.maps.model.LatLngBounds
 import com.google.maps.android.compose.GoogleMap
 import com.google.maps.android.compose.Marker
+import com.google.maps.android.compose.Polyline
 import com.google.maps.android.compose.rememberCameraPositionState
 import com.google.maps.android.compose.rememberUpdatedMarkerState
 
-private const val STOP_ZOOM = 13f
+private const val STOP_ZOOM = 14f
+private const val FIT_PADDING_DP = 56
 
 /**
- * Maps Compose actual: one [Marker] per stop, camera follows the selection.
+ * Maps Compose actual (design §3.1 (4), §6.4): one [Marker] per stop, a [Polyline] through
+ * the stops in itinerary order, camera fitted to the day's stops whenever the set of stops
+ * changes with nothing selected, and following the selection otherwise.
  *
  * Complexity:
- * - **Recomposition Time:** O(S) where S is the number of stops (marker state updates and a
- *   linear scan for the focused stop); the camera update is O(1).
- * - **Composition Memory:** O(S) marker nodes + one camera state.
+ * - **Recomposition Time:** O(S) where S is the number of stops (marker states, polyline
+ *   points, bounds); camera updates are O(1).
+ * - **Composition Memory:** O(S) marker nodes + the polyline + one camera state.
  */
 @Composable
 actual fun MapView(
@@ -31,19 +41,39 @@ actual fun MapView(
     modifier: Modifier,
 ) {
     val camera = rememberCameraPositionState()
-    // Follow the selection; before any selection, land on the first stop once stops arrive.
-    val focus = stops.firstOrNull { it.id == selectedStopId } ?: stops.firstOrNull()
-    LaunchedEffect(focus?.id) {
-        val target = focus ?: return@LaunchedEffect
-        val position = CameraPosition.fromLatLngZoom(LatLng(target.lat, target.lng), STOP_ZOOM)
-        if (selectedStopId == null) camera.position = position
-        else camera.animate(CameraUpdateFactory.newCameraPosition(position))
+    // newLatLngBounds needs a laid-out map ("Map size can't be 0"); onMapLoaded is the safe gate.
+    var mapLoaded by remember { mutableStateOf(false) }
+    val paddingPx = with(LocalDensity.current) { FIT_PADDING_DP.dp.roundToPx() }
+    val stopIds = stops.map { it.id }
+
+    // Fit the day's stops when the set changes (tab switch, add, remove) and nothing is selected.
+    LaunchedEffect(mapLoaded, stopIds, selectedStopId == null) {
+        if (!mapLoaded || selectedStopId != null || stops.isEmpty()) return@LaunchedEffect
+        val update = if (stops.size == 1) {
+            CameraUpdateFactory.newLatLngZoom(stops.first().latLng, STOP_ZOOM)
+        } else {
+            val bounds = LatLngBounds.builder().apply { stops.forEach { include(it.latLng) } }.build()
+            CameraUpdateFactory.newLatLngBounds(bounds, paddingPx)
+        }
+        runCatching { camera.animate(update) }
+            .onFailure { camera.animate(CameraUpdateFactory.newLatLngZoom(stops.first().latLng, STOP_ZOOM)) }
     }
-    GoogleMap(modifier = modifier, cameraPositionState = camera) {
+    // Follow the selection without zooming back out.
+    LaunchedEffect(mapLoaded, selectedStopId) {
+        if (!mapLoaded) return@LaunchedEffect
+        val target = stops.firstOrNull { it.id == selectedStopId } ?: return@LaunchedEffect
+        camera.animate(CameraUpdateFactory.newLatLngZoom(target.latLng, maxOf(camera.position.zoom, STOP_ZOOM)))
+    }
+
+    val routeColor = MaterialTheme.colorScheme.primary
+    GoogleMap(modifier = modifier, cameraPositionState = camera, onMapLoaded = { mapLoaded = true }) {
+        if (stops.size >= 2) {
+            Polyline(points = stops.map { it.latLng }, color = routeColor, width = 8f, zIndex = -1f)
+        }
         stops.forEach { stop ->
             val selected = stop.id == selectedStopId
             Marker(
-                state = rememberUpdatedMarkerState(position = LatLng(stop.lat, stop.lng)),
+                state = rememberUpdatedMarkerState(position = stop.latLng),
                 title = stop.name,
                 icon = BitmapDescriptorFactory.defaultMarker(
                     if (selected) BitmapDescriptorFactory.HUE_AZURE else BitmapDescriptorFactory.HUE_RED,
@@ -53,5 +83,7 @@ actual fun MapView(
             )
         }
     }
-    // TODO Phase 1: camera bounds to the day's stops; polyline between consecutive stops
 }
+
+private val Stop.latLng: LatLng get() = LatLng(lat, lng)
+private val Int.dp get() = androidx.compose.ui.unit.Dp(this.toFloat())

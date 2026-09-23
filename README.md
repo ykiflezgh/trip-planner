@@ -59,7 +59,10 @@ by their handle (sh.calvin.reorderable) and commit a single fractional-key write
 (`StopReorder.neighbours` -> `moveStop`); the stop sheet moves a stop to another day
 (`moveToDay`, end of day) or removes it; a NOT_FOUND on a concurrent delete surfaces as a
 snackbar. `StopReorderTest` includes the 500-random-move soak over `FractionalIndex`.
-Remaining Phase 1 items: map for the selected day (bounds + polyline), offline UX pass
+**Map for the selected day:** both `MapView` actuals draw a polyline through the day's stops
+in itinerary order and fit the camera to them whenever the set of stops changes with nothing
+selected (Android gates on `onMapLoaded`, iOS on the first non-empty layout); selection still
+animates to the stop without zooming out. Remaining Phase 1 item: offline UX pass
 (planning/issues.json).
 Still unverified: the Functions/Places/Calendar call shapes in `shared/data/`. Cloud Functions in `firebase/functions/` are compile-shaped
 TypeScript with TODOs where Phase 2/3 work lands (Routes, Gemini, burst collapsing).
