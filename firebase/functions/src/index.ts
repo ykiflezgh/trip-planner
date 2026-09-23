@@ -20,6 +20,8 @@ import { MODES, adjacentPairs, computeMatrix, legId, legsFromMatrix, planLegs, t
 
 initializeApp();
 const db = getFirestore();
+// Optional facts (stopId, fromDay) are omitted rather than written as undefined.
+db.settings({ ignoreUndefinedProperties: true });
 
 const ROUTES_API_KEY = defineSecret("ROUTES_API_KEY");
 const GEMINI_API_KEY = defineSecret("GEMINI_API_KEY");
@@ -341,13 +343,11 @@ export const onActivityCreated = onDocumentCreated("trips/{tripId}/activity/{eve
   const { tripId } = event.params;
   const actorId = String(snap.get("actorId") ?? "");
   const actorName = String(snap.get("actorName") ?? "");
-  const facts: EventFacts = {
-    type: String(snap.get("type") ?? ""),
-    stopId: (snap.get("stopId") as string | null) ?? undefined,
-    stopName: String(snap.get("stopName") ?? ""),
-    day: Number(snap.get("day") ?? 0),
-    fromDay: (snap.get("fromDay") as number | null) ?? undefined,
-  };
+  const facts: EventFacts = { type: String(snap.get("type") ?? ""), stopName: String(snap.get("stopName") ?? ""), day: Number(snap.get("day") ?? 0) };
+  const stopId = snap.get("stopId") as string | null | undefined;
+  if (stopId) facts.stopId = stopId;
+  const fromDay = snap.get("fromDay") as number | null | undefined;
+  if (typeof fromDay === "number") facts.fromDay = fromDay;
   if (!actorId) { logger.warn("activity without actor; no fan-out", { tripId, eventId: event.params.eventId }); return; }
 
   const windowRef = db.doc(`trips/${tripId}/notify/${actorId}`);
