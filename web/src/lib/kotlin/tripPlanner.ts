@@ -15,6 +15,8 @@ export interface TripDetailState {
   loading: boolean; error: string | null; message: string | null; dayHoursStart: string | null; dayHoursEnd: string | null; online: boolean; selectedDay: number; selectedStopId: string | null; dayCount: number
   canEdit: boolean; isOwner: boolean; pendingSync: boolean; trip: Trip | null; stops: Stop[]; legs: Leg[]; scheduleJson: string | null
   tripZone: string | null; deviceZone: string; zoneDiffers: boolean; localTime: boolean; zoneLabel: string
+  /** Every day's computed schedule (JSON or null) and stops, for the Trip view. */
+  schedules: (string | null)[]; stopsByDay: Stop[][]
 }
 export interface DaySchedule {
   date: string; end: string; hoursStart: string; hoursEnd: string
@@ -33,6 +35,7 @@ export interface TripDetailFacade extends Subscribable<TripDetailState> {
   deleteStop(stopId: string): void
   setDayHours(day: number, start: string, end: string): void
   pinEntry(stopId: string, hhmm: string, order: string | null): void
+  pinAt(stopId: string, day: number, hhmm: string, afterOrder: string | null, beforeOrder: string | null, keepOrder: boolean): void
   unpinEntry(stopId: string): void
   resizeEntry(stopId: string, durationMin: number): void
   updateSettings(name: string, startDate: string, endDate: string, timeZone: string, defaultDayStart: string, defaultDayEnd: string, defaultTravelMode: string): void
