@@ -12,6 +12,15 @@ kotlin {
     androidTarget()
     iosArm64()
     iosSimulatorArm64()
+    // Web spike (design v1.1.1 §18 #10 / companion §6.5): the Kotlin core compiled for the browser,
+    // consumed by the React client through jsMain facades. Node is kept for running commonTest.
+    js(IR) {
+        useEsModules() // Vite loads ES modules natively in dev and prod; UMD only works once bundled
+        browser()
+        nodejs { testTask { useMocha { timeout = "30s" } } }
+        binaries.library()
+        generateTypeScriptDefinitions()
+    }
 
     sourceSets {
         commonMain.dependencies {
@@ -46,6 +55,9 @@ kotlin {
         iosMain.dependencies {
             implementation(libs.ktor.client.darwin)
         }
+        jsMain.dependencies {
+            implementation(libs.ktor.client.js)
+        }
     }
 }
 
@@ -62,4 +74,12 @@ android {
     namespace = "app.tripplanner.shared"
     compileSdk = 36
     defaultConfig { minSdk = 26 }
+}
+
+// Design v1.1.1 §14: the browser library build is copied into web/vendor/shared (gitignored) so the
+// React client imports the Kotlin core from the same commit as the apps and the feed.
+val packageForWeb by tasks.registering(Sync::class) {
+    dependsOn("jsBrowserProductionLibraryDistribution")
+    from(layout.buildDirectory.dir("dist/js/productionLibrary"))
+    into(rootProject.layout.projectDirectory.dir("web/vendor/shared"))
 }

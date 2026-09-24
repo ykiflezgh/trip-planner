@@ -18,6 +18,7 @@ kotlin {
     iosArm64()
     iosSimulatorArm64()
     js(IR) {
+        browser() // web client (companion §6.5)
         nodejs {
             // First use of the js-joda zone database takes a few seconds under mocha.
             testTask { useMocha { timeout = "30s" } }
@@ -54,7 +55,7 @@ android {
 // Design v1.1 §14: the Node library build is copied into firebase/functions/vendor/schedule so the
 // ICS feed Function runs the same engine as the app. Run before `firebase deploy` (firebase.json
 // predeploy) and before the Functions tests; the vendor directory is gitignored.
-val packageForFunctions by tasks.registering(Copy::class) {
+val packageForFunctions by tasks.registering(Sync::class) {
     dependsOn("jsNodeProductionLibraryDistribution")
     from(layout.buildDirectory.dir("dist/js/productionLibrary"))
     into(rootProject.layout.projectDirectory.dir("firebase/functions/vendor/schedule"))

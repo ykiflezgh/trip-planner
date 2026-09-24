@@ -9,6 +9,21 @@
         "export JAVA_HOME=\"${JAVA_HOME:-$(/usr/libexec/java_home -v 17+)}\"; export PATH=\"$JAVA_HOME/bin:$PATH\"; cd firebase && npm --prefix functions run build && exec firebase emulators:start --only hosting,functions,firestore,auth --project tripplanner-dev-fe0a4"
       ],
       "port": 4000
+    },
+    {
+      "name": "web",
+      "runtimeExecutable": "npm",
+      "runtimeArgs": [
+        "--prefix",
+        "web",
+        "run",
+        "dev",
+        "--",
+        "--port",
+        "5173",
+        "--strictPort"
+      ],
+      "port": 5173
     }
   ]
 }

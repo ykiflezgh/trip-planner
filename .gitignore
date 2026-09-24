@@ -23,3 +23,6 @@ iosApp/Info.plist
 
 # Kotlin/JS build of the schedule engine, produced by ./gradlew :schedule:packageForFunctions
 firebase/functions/vendor/
+
+# Vite build output for the web client (deployed by firebase/hosting)
+firebase/hosting/public/app/
