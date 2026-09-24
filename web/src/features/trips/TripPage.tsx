@@ -12,6 +12,10 @@ import { DayView, useAnnouncer, type GridEdit } from '../calendar/DayView'
 import { TripView } from '../calendar/TripView'
 import { EntryDialog } from '../calendar/EntryDialog'
 import { neighboursForTime } from '../../lib/grid'
+import { ActivityPanel } from '../activity/ActivityPanel'
+import { ShareDialog } from '../invites/ShareDialog'
+import { FeedDialog } from '../feed/FeedDialog'
+import { SuggestionBanner } from '../suggest/SuggestionBanner'
 import { MapPanel } from '../map/MapPanel'
 import { MAPS_KEY, MapsProvider } from '../map/MapsProvider'
 
@@ -34,6 +38,7 @@ export function TripPage() {
   const wide = typeof window !== 'undefined' && window.matchMedia('(min-width: 1024px)').matches
   const [pane, setPane] = useState<'calendar' | 'map'>('calendar')
   const [dialog, setDialog] = useState<'add' | 'hours' | 'settings' | null>(null)
+  const [menu, setMenu] = useState(false)
   const schedules = useMemo(() => (state?.schedules ?? []).map(parseSchedule), [state?.schedules])
   const hasMaps = Boolean(MAPS_KEY)
 
@@ -42,6 +47,12 @@ export function TripPage() {
   useEffect(() => { if (Number.isInteger(urlDay) && urlDay >= 0) facade.selectDay(urlDay) }, [facade, urlDay])
   const localTime = params.get('tz') === 'local'
   useEffect(() => facade.setLocalTime(localTime), [facade, localTime])
+  // A notification tap (companion §10) carries the stop to select.
+  const urlStop = params.get('stop')
+  useEffect(() => { if (urlStop) facade.selectStop(urlStop) }, [facade, urlStop])
+  const showActivity = params.get('panel') === 'activity'
+  // One-shot share and feed links from the ViewModel become dialogs.
+  useEffect(() => { if (state?.feedUrl || state?.shareUrl) setMenu(false) }, [state?.feedUrl, state?.shareUrl])
 
   const set = (patch: Record<string, string | null>) => {
     const next = new URLSearchParams(params)
@@ -57,8 +68,10 @@ export function TripPage() {
   if (state.error && !state.trip) return <p className="p-4 text-red-700">{state.error}</p>
   const trip = state.trip
   const days = Array.from({ length: state.dayCount }, (_, d) => d)
+  // A previewed suggestion (design §8.7) freezes editing until Apply or Dismiss.
+  const editing = state.canEdit && !state.suggestion
   // Grid edits (design §6.6): the drop time and the chronological neighbours go to Kotlin, which computes the key.
-  const gridEdit: GridEdit | undefined = state.canEdit ? {
+  const gridEdit: GridEdit | undefined = editing ? {
     pin: (id, day, time) => {
       const sch = schedules[day]
       const entries = (sch?.entries ?? []).map((e) => ({ id: e.id, start: e.start, order: (state.stopsByDay[day] ?? []).find((s) => s.id === e.id)?.order ?? '' }))
@@ -76,16 +89,34 @@ export function TripPage() {
     <MapsProvider>
     <main className="mx-auto max-w-7xl p-4">
       <div className="mb-2 flex flex-wrap items-baseline gap-3">
-        <Link to="/" className="text-sm text-indigo-700">← Trips</Link>
+        <Link to="/app" className="text-sm text-indigo-700">← Trips</Link>
         <h1 className="text-xl font-semibold">{trip?.name ?? 'Trip'}</h1>
         {!state.online && <span className="text-sm text-amber-700">offline · changes queue until you are back</span>}
         {state.pendingSync && <span className="text-sm text-stone-500">syncing…</span>}
         <span className="ml-auto flex gap-2 text-sm">
-          {state.canEdit && <button className="rounded bg-indigo-600 px-3 py-1 text-white" onClick={() => setDialog('add')}>Add stop</button>}
-          {state.canEdit && <button className="rounded border border-stone-300 px-3 py-1" onClick={() => setDialog('hours')}>Day hours</button>}
-          {state.isOwner && trip && <button className="rounded border border-stone-300 px-3 py-1" onClick={() => setDialog('settings')}>Settings</button>}
+          {state.isOwner && <button className="rounded border border-stone-300 px-3 py-1 disabled:opacity-50" disabled={state.sharing || !state.online} onClick={() => facade.share()}>{state.sharing ? 'Sharing…' : 'Share'}</button>}
+          {editing && <button className="rounded bg-indigo-600 px-3 py-1 text-white" onClick={() => setDialog('add')}>Add stop</button>}
+          <span className="relative">
+            <button className="rounded border border-stone-300 px-3 py-1" aria-haspopup="menu" aria-expanded={menu} onClick={() => setMenu(!menu)}>More ▾</button>
+            {menu && (
+              <span role="menu" className="absolute right-0 z-20 mt-1 flex w-64 flex-col rounded border border-stone-200 bg-white py-1 text-left shadow-lg">
+                <button role="menuitem" className="px-3 py-1.5 text-left hover:bg-stone-50" onClick={() => { setMenu(false); set({ panel: showActivity ? null : 'activity' }) }}>{showActivity ? 'Hide activity' : 'Activity'}</button>
+                <button role="menuitem" className="px-3 py-1.5 text-left hover:bg-stone-50" onClick={() => { setMenu(false); facade.setMuted(!state.muted) }}>{state.muted ? 'Unmute notifications' : 'Mute notifications'}</button>
+                {editing && <button role="menuitem" className="px-3 py-1.5 text-left hover:bg-stone-50" onClick={() => { setMenu(false); setDialog('hours') }}>Day hours…</button>}
+                {state.canEdit && state.suggestOrderEnabled && state.stops.length >= 2 && (
+                  <button role="menuitem" className="px-3 py-1.5 text-left hover:bg-stone-50 disabled:opacity-50" disabled={state.suggesting || !state.online || !!state.suggestion} onClick={() => { setMenu(false); facade.suggestOrder() }}>
+                    {state.suggesting ? 'Asking Claude…' : `Suggest an order for Day ${state.selectedDay + 1}`}
+                  </button>
+                )}
+                {state.calendarFeedEnabled && <button role="menuitem" className="px-3 py-1.5 text-left hover:bg-stone-50 disabled:opacity-50" disabled={state.calendarBusy || !state.online} onClick={() => { setMenu(false); facade.addToCalendar() }}>{state.calendarBusy ? 'Preparing calendar link…' : 'Add to my calendar…'}</button>}
+                {state.calendarFeedEnabled && <button role="menuitem" className="px-3 py-1.5 text-left hover:bg-stone-50 disabled:opacity-50" disabled={state.calendarBusy || !state.online} onClick={() => { setMenu(false); facade.revokeCalendarLinks() }}>Remove my calendar links</button>}
+                {state.isOwner && trip && <button role="menuitem" className="px-3 py-1.5 text-left hover:bg-stone-50" onClick={() => { setMenu(false); setDialog('settings') }}>Settings…</button>}
+              </span>
+            )}
+          </span>
         </span>
       </div>
+      {state.suggestion && <SuggestionBanner suggestion={state.suggestion} onApply={() => facade.applySuggestion()} onDismiss={() => facade.dismissSuggestion()} />}
       {message && <p className="mb-2 rounded bg-amber-50 px-3 py-2 text-sm text-amber-800">{message} <button className="underline" onClick={() => facade.consumeMessage()}>dismiss</button></p>}
       <nav className="mb-2 flex gap-1 overflow-x-auto border-b border-stone-200" aria-label="Days">
         {days.map((d) => (
@@ -118,7 +149,7 @@ export function TripPage() {
             : view === 'day'
             ? <DayView day={state.selectedDay} schedule={schedule} stops={state.stops} selectedId={state.selectedStopId} onSelect={(id) => facade.selectStop(id)} edit={gridEdit} />
             : <Agenda schedule={schedule} stops={state.stops} legs={state.legs} selectedId={state.selectedStopId} onSelect={(id) => facade.selectStop(id)}
-                edit={state.canEdit ? {
+                edit={editing ? {
                   move: (id, after, before) => facade.moveStop(id, state.selectedDay, after, before),
                   moveToDay: (id, day) => facade.moveToDay(id, day),
                   remove: (id) => facade.deleteStop(id),
@@ -126,7 +157,9 @@ export function TripPage() {
                 } : undefined} />}
         </section>
         <aside className={`${pane === 'calendar' ? 'hidden lg:block' : ''} min-h-[320px]`}>
-          <MapPanel stops={state.stops} selectedId={state.selectedStopId} onSelect={(id) => facade.selectStop(id)} />
+          {showActivity
+            ? <ActivityPanel tripId={tripId} onClose={() => set({ panel: null })} onOpenStop={(day, id) => { set({ day: String(day), panel: 'activity' }); facade.selectStop(id) }} />
+            : <MapPanel stops={state.stops} selectedId={state.selectedStopId} onSelect={(id) => facade.selectStop(id)} />}
         </aside>
       </div>
       <p aria-live="polite" className="sr-only">{announcement}</p>
@@ -135,6 +168,8 @@ export function TripPage() {
         <EntryDialog stop={editStop} entry={schedules[editStop.day]?.entries.find((e) => e.id === editStop.id)}
           onPin={(t) => gridEdit?.pin(editStop.id, editStop.day, t)} onResize={(m) => facade.resizeEntry(editStop.id, m)} onUnpin={() => facade.unpinEntry(editStop.id)} onClose={() => setEditId(null)} />
       )}
+      {state.shareUrl && trip && <ShareDialog tripName={trip.name} url={state.shareUrl} onMessage={(t) => facade.showMessage?.(t)} onClose={() => facade.consumeShare()} />}
+      {state.feedUrl && <FeedDialog url={state.feedUrl} onMessage={(t) => facade.showMessage?.(t)} onClose={() => facade.consumeFeedUrl()} />}
       {dialog === 'add' && (
         <AddStopDialog hasMaps={hasMaps} onClose={() => setDialog(null)}
           onAddPlace={(p, duration, notes) => { const k = appendKeys(state.stops); facade.addPlaceStop(p.placeId, p.name, p.address, p.lat, p.lng, duration, notes, state.selectedDay, k.afterOrder, k.beforeOrder); setDialog(null) }}

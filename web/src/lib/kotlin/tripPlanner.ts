@@ -17,7 +17,16 @@ export interface TripDetailState {
   tripZone: string | null; deviceZone: string; zoneDiffers: boolean; localTime: boolean; zoneLabel: string
   /** Every day's computed schedule (JSON or null) and stops, for the Trip view. */
   schedules: (string | null)[]; stopsByDay: Stop[][]
+  sharing: boolean; shareUrl: string | null; muted: boolean; memberCount: number
+  calendarBusy: boolean; feedUrl: string | null; calendarFeedEnabled: boolean
+  suggestOrderEnabled: boolean; suggesting: boolean
+  suggestion: { day: number; rationale: string; warnings: string[]; orderedStopIds: string[] } | null
 }
+export interface ActivityRow { id: string; text: string; mine: boolean; type: string; stopId: string | null; day: number; createdAtMs: number | null }
+export interface ActivityState { loading: boolean; error: string | null; rows: ActivityRow[] }
+export interface JoinState { joining: boolean; error: string | null; joinedTripId: string | null; joinedTripName: string; alreadyMember: boolean }
+export interface ActivityFacade extends Subscribable<ActivityState> { close(): void }
+export interface JoinFacade extends Subscribable<JoinState> { join(): void; close(): void }
 export interface DaySchedule {
   date: string; end: string; hoursStart: string; hoursEnd: string
   entries: { id: string; start: string; end: string; pinned: boolean; gapBeforeMin: number; travelBefore?: { from: string; to: string; mode: string; seconds: number; pending: boolean; start: string; end: string } }[]
@@ -40,6 +49,11 @@ export interface TripDetailFacade extends Subscribable<TripDetailState> {
   resizeEntry(stopId: string, durationMin: number): void
   updateSettings(name: string, startDate: string, endDate: string, timeZone: string, defaultDayStart: string, defaultDayEnd: string, defaultTravelMode: string): void
   consumeMessage(): void
+  showMessage?(text: string): void
+  share(): void; consumeShare(): void
+  addToCalendar(): void; revokeCalendarLinks(): void; consumeFeedUrl(): void
+  suggestOrder(): void; applySuggestion(): void; dismissSuggestion(): void
+  setMuted(muted: boolean): void
 }
 
 // Kotlin `object` -> a singleton behind getInstance() in the ES-module output.
@@ -54,6 +68,9 @@ export const resumeRedirect = (): Promise<boolean> => Web.resumeRedirect()
 // Casts: the generated typings say Nullable<T> (undefined included) where the facade guarantees null.
 export const tripList = (): TripListFacade => Web.tripList() as unknown as TripListFacade
 export const tripDetail = (tripId: string): TripDetailFacade => Web.tripDetail(tripId) as unknown as TripDetailFacade
+export const activity = (tripId: string): ActivityFacade => Web.activity(tripId) as unknown as ActivityFacade
+export const join = (code: string): JoinFacade => Web.join(code) as unknown as JoinFacade
+export const setPushToken = (token: string | null): void => Web.setPushToken(token)
 export const computeDay = (dateIso: string, dayStart: string, dayEnd: string, entries: unknown[], travel: unknown[], defaultMode = 'driving'): DaySchedule =>
   JSON.parse(Web.computeDay(dateIso, dayStart, dayEnd, JSON.stringify(entries), JSON.stringify(travel), defaultMode))
 export const parseSchedule = (json: string | null): DaySchedule | null => (json ? (JSON.parse(json) as DaySchedule) : null)

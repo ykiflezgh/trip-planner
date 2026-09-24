@@ -34,7 +34,7 @@
       },
       {
         "source": "/join/**",
-        "destination": "/index.html"
+        "destination": "/app/index.html"
       },
       {
         "source": "/app/**",
