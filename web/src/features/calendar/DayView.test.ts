@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { layout } from './DayView'
+import { layout } from '../../lib/layout'
 
 describe('Day view layout', () => {
   it('positions blocks and legs in minutes from the day start', () => {

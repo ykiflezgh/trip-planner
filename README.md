@@ -276,6 +276,36 @@ the details echoing the message; `PlanningFunctions` collapses that shape so ser
 show twice on the web. Not verified: an actual browser push (needs the
 VAPID key) and a first-time join by a non-member (needs a second account).
 
+**Web W5 — hardening** (branch `web-w5`, companion 0.2 §17): the client is gated and observable, budgeted,
+locked down and tested. **Flags** (design §14): `web/src/lib/flags.ts` reads Remote Config once at boot,
+before the Kotlin core starts (`web_client_enabled` → a "coming soon" page when off, `calendar_feed_enabled`,
+`suggest_order_enabled`; defaults on, 2.5 s timeout, then the cached or default values); the template is
+`firebase/remoteconfig.template.json`, deployed with the rest. **Observability**: Sentry is imported after
+first paint and only with `VITE_SENTRY_DSN` (empty today), source maps are hidden (no `sourceMappingURL`,
+`.map` files excluded from the Hosting deploy, uploaded only when `SENTRY_AUTH_TOKEN` is set), the release
+is the git SHA, and Web Vitals report through `lib/vitals.ts`. **Budgets**: the trip and join pages are
+lazy routes and the push module loads only when notifications are on; `npm run size` checks gzipped
+chunks (`.size-limit.json`) and `npm run lhci` runs Lighthouse against the build (desktop 98 / 100 / 100
+on the dev site). The design cap of 200 kB of startup JS before the Kotlin chunk is not met: the
+startup set measures 215 kB, and it is React DOM 68 + Firestore 69 + Auth 30 + React Router 30 +
+Remote Config 6, so the limit is an interim 220 kB and the only real lever left is the router (about
+25 kB). **Headers** (`firebase/firebase.json`, `/app/**` and `/join/**`): no-cache app shell with
+immutable assets, nosniff, `X-Frame-Options: DENY`, Referrer-Policy, Permissions-Policy, and a
+Content-Security-Policy that ran report-only across the trip page, map, Places search, activity, feed
+create/revoke and the join route with zero violations before being enforced. **Accessibility** (WCAG 2.2
+AA audit of every screen, 51 findings, all addressed): dialogs are named and return focus, live regions
+stay mounted and only change content, messages stay until dismissed (no timers), one shared `Menu`
+(ARIA menu-button keyboard model) serves the header and the Agenda rows, the time grid is a "Calendar"
+region of day groups whose blocks are toggle buttons with an sr-only shortcut description and a 24 px
+resize handle (double-click opens the entry form as the pointer equivalent), Add stop uses the tabs and
+combobox patterns, Join and Activity manage focus, and greys are stone-600 or darker. Facades are now
+created in an effect (`hooks/useFacade.ts`), so StrictMode's mount/unmount/mount replay no longer closes
+the trip page's ViewModel. **Playwright** (`web/e2e`, `npm run e2e:emulators`): 22 tests in 8 specs
+against the Auth and Firestore emulators under the offline `demo-tripplanner` project id (trips
+seeded per test with firebase-admin, sign-in through a dev-only hook, axe scans of every route and
+dialog, keyboard editing, day hours, settings, roles, join), plus `e2e:ui` and `e2e:typecheck`.
+Not in W5: a real Sentry DSN, the VAPID key, App Check for web, the Trip Details redesign.
+
 Still unverified: the Places call shapes in `shared/data/`. Cloud Functions in `firebase/functions/` have no open TODOs.
 
 ## Layout

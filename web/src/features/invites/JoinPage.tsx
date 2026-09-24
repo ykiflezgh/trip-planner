@@ -1,8 +1,9 @@
-import { useEffect, useMemo } from 'react'
+import { useEffect, useMemo, useRef } from 'react'
 import { useNavigate, useParams } from 'react-router'
 import { join } from '../../lib/kotlin/tripPlanner'
 import { useKotlinState } from '../../hooks/useKotlinState'
-import { listFacade } from '../../app/Shell'
+import { useFacade } from '../../hooks/useFacade'
+import { listFacade } from '../../app/session'
 
 /**
  * /join/{code} (companion §8.5): on phones the OS intercepts the link for the app first; this page
@@ -13,12 +14,15 @@ export function JoinPage() {
   const { code = '' } = useParams()
   const navigate = useNavigate()
   const list = useKotlinState(useMemo(() => listFacade(), []))
-  const facade = useMemo(() => join(code), [code])
-  useEffect(() => () => facade.close(), [facade])
+  const facade = useFacade(() => join(code), [code])
   const state = useKotlinState(facade)
   const signedIn = list?.signedIn ?? false
-  useEffect(() => { if (signedIn) facade.join() }, [facade, signedIn])
+  // Depends on the facade: a no-op until useFacade has created it, then the join runs once on the live one.
+  useEffect(() => { if (signedIn) facade?.join() }, [facade, signedIn])
   useEffect(() => { if (state?.joinedTripId) navigate(`/app/t/${state.joinedTripId}`, { replace: true }) }, [navigate, state?.joinedTripId])
+  const heading = useRef<HTMLHeadingElement>(null)
+  /** Retrying removes the "try again" button that was activated, so focus moves to the heading first (WCAG 2.4.3). */
+  const retry = () => { heading.current?.focus(); facade?.join() }
 
   const ua = navigator.userAgent
   const phone = /Android|iPhone|iPad/i.test(ua)
@@ -26,13 +30,19 @@ export function JoinPage() {
 
   return (
     <main className="mx-auto max-w-md p-6">
-      <h1 className="mb-2 text-xl font-semibold">You've been invited to a trip</h1>
+      <h1 ref={heading} tabIndex={-1} className="mb-2 text-xl font-semibold">You've been invited to a trip</h1>
       <p className="mb-4 text-sm text-stone-600">Invite code <code className="rounded bg-stone-100 px-2 py-1">{code}</code></p>
       {phone && <a className="mb-4 block rounded bg-indigo-600 px-4 py-3 text-center text-white" href={appLink}>Open in the app</a>}
       {!signedIn && <p className="text-sm text-stone-600">Sign in above to join on the web{phone ? ', or open the link in the app' : ''}.</p>}
-      {signedIn && state?.joining && <p className="text-sm text-stone-600">Joining…</p>}
-      {signedIn && state?.error && <p className="text-sm text-red-700">{state.error} <button className="underline" onClick={() => facade.join()}>try again</button></p>}
-      {signedIn && state?.alreadyMember && !state.joinedTripId && <p className="text-sm text-stone-600">You are already a member; opening the trip…</p>}
+      {/* The join starts from the signedIn effect, not a control the user pressed, so its outcome is announced (WCAG 4.1.3).
+          Both regions stay mounted and only their content toggles: a region created together with its text is not announced. */}
+      <div role="status" aria-live="polite">
+        {signedIn && state?.joining && <p className="text-sm text-stone-600">Joining…</p>}
+        {signedIn && state?.alreadyMember && !state.joinedTripId && <p className="text-sm text-stone-600">You are already a member; opening the trip…</p>}
+      </div>
+      <div role="alert">
+        {signedIn && state?.error && <p className="text-sm text-red-700">{state.error} <button type="button" className="underline" onClick={retry}>try again</button></p>}
+      </div>
     </main>
   )
 }

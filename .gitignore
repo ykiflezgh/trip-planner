@@ -26,3 +26,6 @@ firebase/functions/vendor/
 
 # Vite build output for the web client (deployed by firebase/hosting)
 firebase/hosting/public/app/
+
+# Functions emulator secrets (firebase functions:secrets, dotenv format): never committed
+firebase/functions/.secret.local

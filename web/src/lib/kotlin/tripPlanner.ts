@@ -61,8 +61,8 @@ const Web = TripPlannerWeb.getInstance()
 
 export interface FirebaseWebConfig { appId: string; apiKey: string; projectId: string; authDomain: string; messagingSenderId: string }
 
-export function start(config: FirebaseWebConfig, appLinkHost = ''): void {
-  Web.start(config.appId, config.apiKey, config.projectId, config.authDomain, config.messagingSenderId, appLinkHost)
+export function start(config: FirebaseWebConfig, appLinkHost = '', calendarFeedEnabled = true, suggestOrderEnabled = true): void {
+  Web.start(config.appId, config.apiKey, config.projectId, config.authDomain, config.messagingSenderId, appLinkHost, calendarFeedEnabled, suggestOrderEnabled)
 }
 export const resumeRedirect = (): Promise<boolean> => Web.resumeRedirect()
 // Casts: the generated typings say Nullable<T> (undefined included) where the facade guarantees null.

@@ -1,6 +1,7 @@
 package app.tripplanner.shared.web
 
 import app.tripplanner.schedule.ScheduleJs
+import app.tripplanner.shared.web.externals.getApps
 import app.tripplanner.shared.web.externals.getAuth
 import app.tripplanner.shared.web.externals.getRedirectResult
 import app.tripplanner.shared.core.model.TravelMode
@@ -54,11 +55,16 @@ object TripPlannerWeb {
      * - **Time:** O(D) Koin definitions.
      * - **Space:** O(D).
      */
-    fun start(applicationId: String, apiKey: String, projectId: String, authDomain: String, gcmSenderId: String, appLinkHost: String) {
-        Firebase.initialize(
-            options = FirebaseOptions(applicationId = applicationId, apiKey = apiKey, projectId = projectId, authDomain = authDomain, gcmSenderId = gcmSenderId),
-        )
-        val config = if (appLinkHost.isBlank()) AppConfig() else AppConfig(appLinkHost = appLinkHost)
+    fun start(applicationId: String, apiKey: String, projectId: String, authDomain: String, gcmSenderId: String, appLinkHost: String, calendarFeedEnabled: Boolean, suggestOrderEnabled: Boolean) {
+        // The page may have created the default app already (it reads Remote Config before starting the core);
+        // initializing twice throws app/duplicate-app, so reuse it.
+        if (getApps().isEmpty()) {
+            Firebase.initialize(
+                options = FirebaseOptions(applicationId = applicationId, apiKey = apiKey, projectId = projectId, authDomain = authDomain, gcmSenderId = gcmSenderId),
+            )
+        }
+        // The flags come from Remote Config on the web (companion §14), fetched by the page before start().
+        val config = AppConfig(appLinkHost = appLinkHost.ifBlank { AppConfig().appLinkHost }, calendarFeedEnabled = calendarFeedEnabled, suggestOrderEnabled = suggestOrderEnabled)
         // No Places key: the web resolves places through the JS Places library (companion §8.3), never the Ktor client.
         startKoin { modules(sharedModule(placesApiKey = "", config = config), jsModule()) }
     }

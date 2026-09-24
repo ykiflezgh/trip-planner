@@ -1,7 +1,7 @@
 import { useEffect } from 'react'
 import { Map, Marker, useMap } from '@vis.gl/react-google-maps'
 import type { Stop } from '../../lib/kotlin/tripPlanner'
-import { MAPS_KEY as KEY } from './MapsProvider'
+import { MAPS_KEY as KEY } from '../../lib/maps'
 
 /**
  * Markers numbered by order; selecting one selects the stop in the calendar and back (companion §6.6).
@@ -15,7 +15,7 @@ export function MapPanel({ stops, selectedId, onSelect }: { stops: Stop[]; selec
     return (
       <div className="rounded border border-dashed border-stone-300 p-4 text-sm text-stone-600">
         <p className="mb-2">Map needs <code>VITE_MAPS_API_KEY</code> (a referrer-restricted Maps JavaScript key).</p>
-        <ol className="list-decimal pl-5">{placed.map((s) => <li key={s.id} className={s.id === selectedId ? 'font-medium' : ''}>{s.name}</li>)}</ol>
+        <ol className="list-decimal pl-5">{placed.map((s) => <li key={s.id} aria-current={s.id === selectedId ? 'true' : undefined} className={s.id === selectedId ? 'font-medium' : ''}>{s.name}</li>)}</ol>
       </div>
     )
   }
@@ -24,7 +24,7 @@ export function MapPanel({ stops, selectedId, onSelect }: { stops: Stop[]; selec
 
 function LiveMap({ placed, selectedId, onSelect }: { placed: Stop[]; selectedId: string | null; onSelect: (id: string | null) => void }) {
   const sel = placed.find((s) => s.id === selectedId)
-  if (placed.length === 0) return <p className="rounded border border-dashed border-stone-300 p-4 text-sm text-stone-500">No stops with a location on this day.</p>
+  if (placed.length === 0) return <p className="rounded border border-dashed border-stone-300 p-4 text-sm text-stone-600">No stops with a location on this day.</p>
   // Mounted only once stops exist: the Map reads defaultCenter at mount, so an empty first render would leave it at 0,0.
   return (
     <Map className="h-full min-h-[320px] rounded border border-stone-200" defaultZoom={13} defaultCenter={{ lat: placed[0].lat!, lng: placed[0].lng! }}

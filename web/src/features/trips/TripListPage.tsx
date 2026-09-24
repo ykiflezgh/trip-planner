@@ -1,7 +1,7 @@
 import { useMemo } from 'react'
 import { Link } from 'react-router'
 import { useKotlinState } from '../../hooks/useKotlinState'
-import { listFacade } from '../../app/Shell'
+import { listFacade } from '../../app/session'
 
 export function TripListPage() {
   const facade = useMemo(() => listFacade(), [])
@@ -16,12 +16,13 @@ export function TripListPage() {
         {state.trips.map((t) => (
           <li key={t.id}>
             <Link to={`/app/t/${t.id}`} className="flex items-baseline justify-between px-4 py-3 hover:bg-stone-50">
-              <span className="font-medium">{t.name || 'Untitled trip'}{t.pendingSync && <span className="ml-2 text-xs text-stone-400">syncing…</span>}</span>
-              <span className="text-sm text-stone-500">{t.startDate} → {t.endDate} · {t.timeZone}</span>
+              {/* stone-600 (~7.6:1) for the small secondary text; stone-400/500 fall short of 4.5:1 on white (WCAG 1.4.3). */}
+              <span className="font-medium">{t.name || 'Untitled trip'}{t.pendingSync && <span className="ml-2 text-xs text-stone-600">syncing…</span>}</span>
+              <span className="text-sm text-stone-600">{t.startDate} → {t.endDate} · {t.timeZone}</span>
             </Link>
           </li>
         ))}
-        {state.trips.length === 0 && <li className="px-4 py-3 text-stone-500">No trips yet. Create one in the app.</li>}
+        {state.trips.length === 0 && <li className="px-4 py-3 text-stone-600">No trips yet. Create one in the app.</li>}
       </ul>
     </main>
   )
