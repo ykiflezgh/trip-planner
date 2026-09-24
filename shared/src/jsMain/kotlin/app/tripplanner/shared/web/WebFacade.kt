@@ -10,6 +10,8 @@ import app.tripplanner.shared.feature.calendar.TimeDisplay
 import app.tripplanner.shared.feature.trips.TripDays
 import app.tripplanner.shared.di.AppConfig
 import app.tripplanner.shared.di.sharedModule
+import app.tripplanner.shared.feature.activity.ActivityFeedViewModel
+import app.tripplanner.shared.feature.invites.JoinTripViewModel
 import app.tripplanner.shared.feature.trips.TripDetailUiState
 import app.tripplanner.shared.feature.trips.TripDetailViewModel
 import app.tripplanner.shared.feature.trips.TripListUiState
@@ -72,6 +74,32 @@ object TripPlannerWeb {
      * - **Space:** O(1).
      */
     fun resumeRedirect(): Promise<Boolean> = getRedirectResult(getAuth()).then<Boolean> { result: dynamic -> result != null }
+
+    /**
+     * Web push (companion §10): the page obtains the FCM token itself (permission prompts need a
+     * user gesture in browsers) and hands it here; `PushRegistrar` stores it in `users/{uid}.fcmTokens`.
+     *
+     * Complexity:
+     * - **Time:** O(1).
+     * - **Space:** O(1).
+     */
+    fun setPushToken(token: String?) {
+        (KoinPlatform.getKoin().get<app.tripplanner.shared.platform.PushTokenProvider>() as JsPushTokenProvider).setToken(token)
+    }
+
+    /**
+     * Complexity:
+     * - **Time:** O(1).
+     * - **Space:** O(1).
+     */
+    fun activity(tripId: String): ActivityFacade = ActivityFacade(KoinPlatform.getKoin().get { parametersOf(tripId) }, scope)
+
+    /**
+     * Complexity:
+     * - **Time:** O(1).
+     * - **Space:** O(1).
+     */
+    fun join(code: String): JoinFacade = JoinFacade(KoinPlatform.getKoin().get { parametersOf(code) }, scope)
 
     /**
      * Complexity:
@@ -166,6 +194,18 @@ class TripDetailFacade internal constructor(private val vm: TripDetailViewModel,
     fun updateSettings(name: String, startDate: String, endDate: String, timeZone: String, defaultDayStart: String, defaultDayEnd: String, defaultTravelMode: String) =
         vm.updateSettings(name, startDate, endDate, timeZone, defaultDayStart, defaultDayEnd, defaultTravelMode)
     fun consumeMessage() = vm.consumeMessage()
+    fun showMessage(text: String) = vm.showMessage(text)
+
+    // Collaboration (W4, companion §8.5–§8.7, §10).
+    fun share() = vm.share()
+    fun consumeShare() = vm.consumeShare()
+    fun addToCalendar() = vm.addToCalendar()
+    fun revokeCalendarLinks() = vm.revokeCalendarLinks()
+    fun consumeFeedUrl() = vm.consumeFeedUrl()
+    fun suggestOrder() = vm.suggestOrder()
+    fun applySuggestion() = vm.applySuggestion()
+    fun dismissSuggestion() = vm.dismissSuggestion()
+    fun setMuted(muted: Boolean) = vm.setMuted(muted)
     /**
      * Releases the ViewModel (Firestore listeners detach once the last subscriber is gone).
      *
@@ -173,6 +213,47 @@ class TripDetailFacade internal constructor(private val vm: TripDetailViewModel,
      * - **Time:** O(1).
      * - **Space:** O(1).
      */
+    fun close() = store.clear()
+}
+
+/** Activity feed of one trip (design §10): rows already described in Kotlin (`NotificationText`). */
+@JsExport
+class ActivityFacade internal constructor(private val vm: ActivityFeedViewModel, private val scope: CoroutineScope) {
+    private val store = ViewModelStore().apply { put("activity", vm) }
+    /**
+     * Complexity:
+     * - **Time:** O(E) per emission for E events.
+     * - **Space:** O(E).
+     */
+    fun subscribe(onState: (Any) -> Unit): () -> Unit = vm.state.subscribeJs(scope) { st ->
+        val o = obj()
+        o.loading = st.loading; o.error = st.error
+        o.rows = st.rows.map { r ->
+            val j = obj()
+            j.id = r.event.id; j.text = r.text; j.mine = r.mine; j.type = r.event.type; j.stopId = r.event.stopId; j.day = r.event.day
+            j.createdAtMs = (r.event.createdAt as? dev.gitlive.firebase.firestore.Timestamp)?.let { (it.seconds * 1000 + it.nanoseconds / 1_000_000).toDouble() }
+            j
+        }.toTypedArray()
+        onState(o)
+    }
+    fun close() = store.clear()
+}
+
+/** Invite redemption (design §8.2): `join()` calls the Function; the state carries the trip to open. */
+@JsExport
+class JoinFacade internal constructor(private val vm: JoinTripViewModel, private val scope: CoroutineScope) {
+    private val store = ViewModelStore().apply { put("join", vm) }
+    /**
+     * Complexity:
+     * - **Time:** O(1) per emission.
+     * - **Space:** O(1).
+     */
+    fun subscribe(onState: (Any) -> Unit): () -> Unit = vm.state.subscribeJs(scope) { st ->
+        val o = obj()
+        o.joining = st.joining; o.error = st.error; o.joinedTripId = st.joinedTripId; o.joinedTripName = st.joinedTripName; o.alreadyMember = st.alreadyMember
+        onState(o)
+    }
+    fun join() = vm.join()
     fun close() = store.clear()
 }
 
@@ -206,6 +287,11 @@ private fun TripDetailUiState.toJs(local: Boolean): dynamic {
     o.dayHoursStart = dayHours[selectedDay]?.start ?: trip?.defaultDayStart
     o.dayHoursEnd = dayHours[selectedDay]?.end ?: trip?.defaultDayEnd
     o.dayCount = dayCount; o.canEdit = canEdit; o.isOwner = isOwner; o.pendingSync = pendingSync
+    o.sharing = sharing; o.shareUrl = shareUrl; o.muted = muted
+    o.calendarBusy = calendarBusy; o.feedUrl = feedUrl; o.calendarFeedEnabled = calendarFeedEnabled
+    o.suggestOrderEnabled = suggestOrderEnabled; o.suggesting = suggesting
+    o.suggestion = suggestion?.let { sg -> val j = obj(); j.day = sg.day; j.rationale = sg.rationale; j.warnings = sg.warnings.toTypedArray(); j.orderedStopIds = sg.orderedStopIds.toTypedArray(); j }
+    o.memberCount = trip?.memberIds?.size ?: 0
     o.trip = trip?.toJs()
     val dayStops = stopsForSelectedDay
     o.stops = dayStops.map { s ->

@@ -77,6 +77,19 @@ class PlanningFunctions {
     private inline fun <T> call(block: () -> T): T = try {
         block()
     } catch (e: FirebaseFunctionsException) {
-        throw FunctionException(e.code.toString(), e.message ?: "Something went wrong")
+        throw FunctionException(e.code.toString(), dedupe(e.message ?: "Something went wrong"))
+    }
+
+    /**
+     * The JS wrapper reports callable errors as "message: details" and the details echo the
+     * message, so the web showed every server message twice; collapse that shape.
+     *
+     * Complexity:
+     * - **Time:** O(L) for an L-character message.
+     * - **Space:** O(L).
+     */
+    private fun dedupe(message: String): String {
+        val half = message.indexOf(": ")
+        return if (half > 0 && message.length == half * 2 + 2 && message.substring(0, half) == message.substring(half + 2)) message.substring(0, half) else message
     }
 }

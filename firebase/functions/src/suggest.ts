@@ -116,10 +116,13 @@ export type HttpFetch = (url: string, init: { method: string; headers: Record<st
  * - Time: O(1) round trip.
  * - Space: O(P) for the P-byte prompt.
  */
-export async function callClaude(apiKey: string, prompt: string, fetchImpl: HttpFetch): Promise<Suggestion> {
+export async function callClaude(apiKey: string, prompt: string, fetchImpl: HttpFetch, workspaceId?: string): Promise<Suggestion> {
+  // An organization-level key must name the workspace to bill; a workspace-scoped key needs no header.
+  const headers: Record<string, string> = { "content-type": "application/json", "x-api-key": apiKey, "anthropic-version": ANTHROPIC_VERSION };
+  if (workspaceId) headers["anthropic-workspace-id"] = workspaceId;
   const res = await fetchImpl("https://api.anthropic.com/v1/messages", {
     method: "POST",
-    headers: { "content-type": "application/json", "x-api-key": apiKey, "anthropic-version": ANTHROPIC_VERSION },
+    headers,
     body: JSON.stringify({
       model: CLAUDE_MODEL,
       max_tokens: 1024,

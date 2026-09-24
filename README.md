@@ -248,6 +248,34 @@ and would otherwise read a stale null. Verified on the dev site with a temporary
 keyboard pin and resize with announcements, Unpin from the dialog, a real pointer drag to 11:00, and a
 cross-day move from the Trip view. Vitest: 11 tests (snap, time offsets, chronological neighbours).
 
+**Web W4 — collaboration** (branch `web-w4`, companion 0.2 §17): the app now owns `/join/{code}`
+(Hosting rewrites it to the app shell; the static landing page is gone): a signed-in member redeems
+through `redeemInvite` and lands in the trip, a visitor is asked to sign in, phones get "Open in the
+app" (`intent://` on Android, `tripplanner://` elsewhere). The trip page gains Share (owner; invite
+link dialog with Copy and the Web Share sheet), a More menu (Activity panel in place of the map,
+Mute, Day hours, Suggest an order, Add to my calendar with the feed dialog and per-app instructions,
+Remove my calendar links, Settings) and the suggestion preview banner (editing frozen while
+previewing). Web push (companion §10): `lib/push/webPush.ts` registers `public/firebase-messaging-sw.js`
+(Firebase config passed in the registration URL; notification text ported from
+`NotificationText.describe`, tested), asks for permission after the header button's click, fetches
+the FCM token and hands it to Kotlin (`TripPlannerWeb.setPushToken`), where `PushRegistrar` stores it
+beside the mobile tokens; the worker stays quiet when a tab has the trip in focus, and a tap opens
+`/app/t/{tripId}?day=N&view=day&stop={stopId}`, which selects the stop. Foreground messages show a
+toast. It needs `VITE_FCM_VAPID_KEY` (Firebase console → Cloud Messaging → Web Push certificates);
+without it the button reads "Notifications need setup". Facades: `activity(tripId)`, `join(code)`,
+and share / feed / suggestion / mute on the trip facade; `JsPushTokenProvider.requestPermission` only
+reports the browser's permission, since prompts need a user gesture. Verified on the dev site:
+activity rows, feed link created then revoked, invite link created and the join route redirecting
+an existing member into the trip, the push button's setup state, and the suggestion path end to end
+once the real Anthropic key was in place: the org issues organization-level keys, which Anthropic rejects
+without an `anthropic-workspace-id` header, so the Function takes an optional `ANTHROPIC_WORKSPACE_ID`
+param (each project's `functions/.env.*`; empty for a workspace-scoped key). With it, Claude answered in
+about six seconds, the banner showed the rationale, the preview reordered the day with editing frozen,
+and Apply wrote the new keys. The JS Firebase wrapper reports callable errors as "message: details" with
+the details echoing the message; `PlanningFunctions` collapses that shape so server messages no longer
+show twice on the web. Not verified: an actual browser push (needs the
+VAPID key) and a first-time join by a non-member (needs a second account).
+
 Still unverified: the Places call shapes in `shared/data/`. Cloud Functions in `firebase/functions/` have no open TODOs.
 
 ## Layout

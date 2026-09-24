@@ -7,7 +7,7 @@
 import { onCall, onRequest, HttpsError } from "firebase-functions/v2/https";
 import { onDocumentCreated, onDocumentWrittenWithAuthContext, type DocumentSnapshot } from "firebase-functions/v2/firestore";
 import { onTaskDispatched } from "firebase-functions/v2/tasks";
-import { defineBoolean, defineSecret } from "firebase-functions/params";
+import { defineBoolean, defineSecret, defineString } from "firebase-functions/params";
 import { logger } from "firebase-functions/v2";
 import { initializeApp } from "firebase-admin/app";
 import { FieldValue, getFirestore, type DocumentReference } from "firebase-admin/firestore";
@@ -29,6 +29,8 @@ const ROUTES_API_KEY = defineSecret("ROUTES_API_KEY");
 const ANTHROPIC_API_KEY = defineSecret("ANTHROPIC_API_KEY");
 /** Kill switch for §8.7 (stands in for the Remote Config flag `suggest_order_enabled`). */
 const SUGGEST_ORDER_ENABLED = defineBoolean("SUGGEST_ORDER_ENABLED", { default: true });
+/** Anthropic workspace to bill when ANTHROPIC_API_KEY is an organization-level key (`wrkspc_…`); empty for a workspace-scoped key. */
+const ANTHROPIC_WORKSPACE_ID = defineString("ANTHROPIC_WORKSPACE_ID", { default: "" });
 /**
  * Dev-only: also push to the actor's own devices. Design §10 excludes the actor; with a single
  * test account that would make the fan-out unobservable. Set in .env.<project> for dev only.
@@ -460,7 +462,7 @@ export const suggestDayOrder = onCall({ secrets: [ANTHROPIC_API_KEY], timeoutSec
     defaultMode: String(trip.get("defaultTravelMode") ?? "driving").toLowerCase(),
   };
   try {
-    const out = await suggestOrder(dayIn, stops, legs, (prompt) => callClaude(apiKey, prompt, fetch as unknown as HttpFetch));
+    const out = await suggestOrder(dayIn, stops, legs, (prompt) => callClaude(apiKey, prompt, fetch as unknown as HttpFetch, ANTHROPIC_WORKSPACE_ID.value() || undefined));
     logger.info("suggestDayOrder", { tripId, day, stops: stops.length, lateMinutes: out.lateMinutes });
     return { orderedStopIds: out.orderedStopIds, rationale: out.rationale, warnings: out.warnings };
   } catch (e) {

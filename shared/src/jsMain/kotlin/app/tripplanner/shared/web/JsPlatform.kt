@@ -108,10 +108,15 @@ class JsShareSheet : ShareSheet {
     }
 }
 
-/** Web push arrives in a later phase (companion §10); until then no token and no permission. */
+/**
+ * Web push (companion §10): the page fetches the FCM token after a user gesture and hands it to
+ * [setToken]; `requestPermission` never prompts (browsers require a gesture), it only reports.
+ */
 class JsPushTokenProvider : PushTokenProvider {
-    override val token: StateFlow<String?> = MutableStateFlow(null)
-    override suspend fun requestPermission(): Boolean = false
+    private val current = MutableStateFlow<String?>(null)
+    override val token: StateFlow<String?> get() = current
+    fun setToken(token: String?) { current.value = token }
+    override suspend fun requestPermission(): Boolean = js("typeof Notification !== 'undefined' && Notification.permission === 'granted'") as Boolean
 }
 
 /** Browsers cannot schedule background notifications (companion §10): reminders are a no-op on the web. */
