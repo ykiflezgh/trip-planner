@@ -2,7 +2,7 @@ import { expect, test } from './fixtures'
 import { seedDayHours } from './support/seed'
 
 const openDayHours = async (page: import('@playwright/test').Page) => {
-  await page.getByRole('button', { name: 'More ▾' }).click()
+  await page.getByRole('button', { name: 'More', exact: true }).click()
   await page.getByRole('menuitem', { name: /^Day hours/ }).click()
   const dialog = page.getByRole('dialog')
   await expect(dialog).toBeVisible()

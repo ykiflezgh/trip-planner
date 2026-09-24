@@ -5,7 +5,10 @@ export interface MenuItem { label: string; onSelect: () => void; disabled?: bool
 /**
  * Menu button with the ARIA menu keyboard model (WCAG 4.1.2, 2.4.3): the trigger reports
  * aria-haspopup/aria-expanded, opening focuses the first item, ArrowUp/Down and Home/End move,
- * Escape and outside clicks close, and closing (by choice or Escape) returns focus to the trigger.
+ * Escape (from an item, or from the trigger during the tick before the first item is focused) and outside
+ * clicks close, and closing (by choice or Escape) returns focus to the trigger.
+ * The menu is named by its trigger (aria-labelledby), whatever shape the label takes: plain text, text
+ * with an aria-hidden glyph, or a role="img" span carrying the name.
  */
 export function Menu({ label, items, className = '', triggerClassName = '', align = 'right' }: { label: React.ReactNode; items: MenuItem[]; className?: string; triggerClassName?: string; align?: 'left' | 'right' }) {
   const [open, setOpen] = useState(false)
@@ -43,12 +46,12 @@ export function Menu({ label, items, className = '', triggerClassName = '', alig
 
   return (
     <span className={`relative ${className}`}>
-      <button ref={trigger} type="button" aria-haspopup="menu" aria-expanded={open} aria-controls={open ? id : undefined} className={triggerClassName}
-        onClick={() => setOpen(!open)} onKeyDown={(e) => { if (!open && (e.key === 'ArrowDown' || e.key === 'ArrowUp')) { e.preventDefault(); setOpen(true) } }}>
+      <button ref={trigger} id={`${id}-trigger`} type="button" aria-haspopup="menu" aria-expanded={open} aria-controls={open ? id : undefined} className={triggerClassName}
+        onClick={() => setOpen(!open)} onKeyDown={(e) => { if (!open && (e.key === 'ArrowDown' || e.key === 'ArrowUp')) { e.preventDefault(); setOpen(true) } else if (open && e.key === 'Escape') { e.preventDefault(); close() } }}>
         {label}
       </button>
       {open && (
-        <div ref={list} id={id} role="menu" aria-label={typeof label === 'string' ? label : undefined} onKeyDown={onKey}
+        <div ref={list} id={id} role="menu" aria-labelledby={`${id}-trigger`} onKeyDown={onKey}
           className={`absolute ${align === 'right' ? 'right-0' : 'left-0'} z-20 mt-1 flex w-64 flex-col rounded border border-stone-200 bg-white py-1 text-left text-sm shadow-lg`}>
           {items.map((it, i) => (
             <button key={i} type="button" role="menuitem" data-index={i} tabIndex={i === active ? 0 : -1} disabled={it.disabled} aria-disabled={it.disabled || undefined}

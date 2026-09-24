@@ -1,6 +1,7 @@
-import { useEffect, useMemo, useRef } from 'react'
+import { useEffect, useRef } from 'react'
 import { activity } from '../../lib/kotlin/tripPlanner'
 import { useKotlinState } from '../../hooks/useKotlinState'
+import { useFacade } from '../../hooks/useFacade'
 
 const when = (ms: number | null) => {
   if (!ms) return 'just now'
@@ -11,15 +12,16 @@ const when = (ms: number | null) => {
   return new Date(ms).toLocaleDateString(undefined, { month: 'short', day: 'numeric' })
 }
 
-/** Live activity feed for the open trip (design §10); rows are worded in Kotlin. */
-export function ActivityPanel({ tripId, onOpenStop, onClose }: { tripId: string; onOpenStop: (day: number, stopId: string | null) => void; onClose: () => void }) {
-  const facade = useMemo(() => activity(tripId), [tripId])
-  useEffect(() => () => facade.close(), [facade])
+/** Live activity feed for the open trip (design §10); rows are worded in Kotlin. `autoFocus`: the opener asks for focus (below). */
+export function ActivityPanel({ tripId, autoFocus = false, onOpenStop, onClose }: { tripId: string; autoFocus?: boolean; onOpenStop: (day: number, stopId: string | null) => void; onClose: () => void }) {
+  const facade = useFacade(() => activity(tripId), [tripId])
   const state = useKotlinState(facade)
   // Opened from the More menu at the top of the page and mounted near its end: focus follows so a
-  // keyboard user is not sent back through the calendar to reach it (WCAG 2.4.3).
+  // keyboard user is not sent back through the calendar to reach it (WCAG 2.4.3). Only when that menu
+  // opened it (`autoFocus`): a page load or reload of a URL with ?panel=activity mounts the panel too,
+  // and taking focus there would pull the reader away from the top of the page.
   const heading = useRef<HTMLHeadingElement>(null)
-  useEffect(() => { heading.current?.focus() }, [])
+  useEffect(() => { if (autoFocus) heading.current?.focus() }, [autoFocus])
   return (
     <section aria-label="Activity" className="flex h-full flex-col rounded border border-stone-200 bg-white">
       <header className="flex items-center justify-between border-b border-stone-200 px-3 py-2">

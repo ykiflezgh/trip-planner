@@ -12,7 +12,9 @@
     "size": "size-limit",
     "lhci": "lhci autorun",
     "e2e": "playwright test",
-    "e2e:emulators": "cd ../firebase && firebase emulators:exec --only auth,firestore --project tripplanner-dev-fe0a4 \"cd ../web && npx playwright test\""
+    "e2e:emulators": "cd ../firebase && firebase emulators:exec --only auth,firestore --project demo-tripplanner \"cd ../web && npx playwright test\"",
+    "e2e:ui": "playwright test --ui",
+    "e2e:typecheck": "tsc -p e2e/tsconfig.json --noEmit"
   },
   "dependencies": {
     "@dnd-kit/core": "^6.3.1",

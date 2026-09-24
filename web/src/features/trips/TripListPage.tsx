@@ -16,7 +16,7 @@ export function TripListPage() {
         {state.trips.map((t) => (
           <li key={t.id}>
             <Link to={`/app/t/${t.id}`} className="flex items-baseline justify-between px-4 py-3 hover:bg-stone-50">
-              {/* stone-600 (~6.9:1) for the small secondary text; stone-400/500 fall short of 4.5:1 on white (WCAG 1.4.3). */}
+              {/* stone-600 (~7.6:1) for the small secondary text; stone-400/500 fall short of 4.5:1 on white (WCAG 1.4.3). */}
               <span className="font-medium">{t.name || 'Untitled trip'}{t.pendingSync && <span className="ml-2 text-xs text-stone-600">syncing…</span>}</span>
               <span className="text-sm text-stone-600">{t.startDate} → {t.endDate} · {t.timeZone}</span>
             </Link>

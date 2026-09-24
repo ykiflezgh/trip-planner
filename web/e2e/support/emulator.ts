@@ -1,6 +1,7 @@
 /** Emulator REST helpers for the suite: the emulators accept any API key and nothing leaves the machine. */
 
-export const PROJECT_ID = 'tripplanner-dev-fe0a4'
+// A demo-* project id is offline by definition (no credentials, no lookups), so a suite can never reach the real tripplanner-dev-fe0a4.
+export const PROJECT_ID = 'demo-tripplanner'
 // firebase emulators:exec sets both; the defaults cover a suite run against emulators started by hand.
 export const FIRESTORE_HOST = (process.env.FIRESTORE_EMULATOR_HOST ??= '127.0.0.1:8080')
 export const AUTH_HOST = (process.env.FIREBASE_AUTH_EMULATOR_HOST ??= '127.0.0.1:9099')
@@ -22,8 +23,13 @@ export async function pingEmulators(): Promise<void> {
 }
 
 export async function clearEmulators(): Promise<void> {
-  await fetch(`http://${AUTH_HOST}/emulator/v1/projects/${PROJECT_ID}/accounts`, { method: 'DELETE', headers: { Authorization: 'Bearer owner' } })
-  await fetch(`http://${FIRESTORE_HOST}/emulator/v1/projects/${PROJECT_ID}/databases/(default)/documents`, { method: 'DELETE' })
+  // A wipe that silently fails leaves the previous run's users and trips in place, so both responses are checked.
+  const wipe = async (what: string, url: string, headers?: Record<string, string>) => {
+    const res = await fetch(url, { method: 'DELETE', headers })
+    if (!res.ok) throw new Error(`clear ${what}: ${res.status} ${await res.text()}`)
+  }
+  await wipe('Auth accounts', `http://${AUTH_HOST}/emulator/v1/projects/${PROJECT_ID}/accounts`, { Authorization: 'Bearer owner' })
+  await wipe('Firestore documents', `http://${FIRESTORE_HOST}/emulator/v1/projects/${PROJECT_ID}/databases/(default)/documents`)
 }
 
 /** Auth emulator REST: any `key` is accepted; returns the new uid as `localId`. */

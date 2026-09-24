@@ -9,7 +9,7 @@ export const flags: Flags = { webClientEnabled: true, calendarFeedEnabled: true,
 const DEFAULTS = { web_client_enabled: true, calendar_feed_enabled: true, suggest_order_enabled: true }
 
 export async function loadFlags(timeoutMs = 2500): Promise<Flags> {
-  if (import.meta.env.VITE_USE_EMULATORS === '1') return flags // e2e (web/e2e): Remote Config has no emulator; defaults (all on), no network
+  if (import.meta.env.DEV && import.meta.env.VITE_USE_EMULATORS === '1') return flags // e2e (web/e2e) on the dev server: Remote Config has no emulator; defaults (all on), no network. DEV-gated: a production bundle always fetches
   try {
     if (!(await isSupported())) return flags
     const rc = getRemoteConfig(getApp())

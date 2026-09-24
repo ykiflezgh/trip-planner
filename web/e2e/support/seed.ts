@@ -44,7 +44,7 @@ export async function seedTrip(o: SeedOptions): Promise<SeededTrip> {
   })
   stop('colosseum', { placeId: 'e2e-colosseum', name: 'Colosseum', lat: 41.8902, lng: 12.4922, address: 'Piazza del Colosseo, 1, Roma', order: ORDER[0], durationMin: 90 })
   stop('pantheon', { placeId: 'e2e-pantheon', name: 'Pantheon', lat: 41.8986, lng: 12.4769, address: 'Piazza della Rotonda, Roma', order: ORDER[1], durationMin: 60 })
-  stop('dinner', { kind: 'custom', name: 'Dinner in Trastevere', order: ORDER[2], durationMin: 90, fixedStart: '19:30', notes: 'Booked for four' })
+  stop('dinner', { kind: 'custom', name: 'Dinner in Trastevere', order: ORDER[2], durationMin: 90, fixedStart: '19:30', notes: 'Booked for four', placeFetchedAt: null }) // nothing was fetched from Places for a custom entry: the model default (Models.kt), not the defaults' stamp
   if (o.legs) {
     // trips/{id}/travel/{from}_{to}_{mode}: TravelLeg.mode is the Kotlin enum name (DRIVE|WALK); the client never reads the doc id.
     batch.set(trip.collection('travel').doc('colosseum_pantheon_DRIVE'), { fromStopId: 'colosseum', toStopId: 'pantheon', mode: 'DRIVE', seconds: 600, meters: 1500, error: null, computedAt: Date.now() })

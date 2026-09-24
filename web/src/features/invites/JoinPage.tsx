@@ -2,6 +2,7 @@ import { useEffect, useMemo, useRef } from 'react'
 import { useNavigate, useParams } from 'react-router'
 import { join } from '../../lib/kotlin/tripPlanner'
 import { useKotlinState } from '../../hooks/useKotlinState'
+import { useFacade } from '../../hooks/useFacade'
 import { listFacade } from '../../app/session'
 
 /**
@@ -13,15 +14,15 @@ export function JoinPage() {
   const { code = '' } = useParams()
   const navigate = useNavigate()
   const list = useKotlinState(useMemo(() => listFacade(), []))
-  const facade = useMemo(() => join(code), [code])
-  useEffect(() => () => facade.close(), [facade])
+  const facade = useFacade(() => join(code), [code])
   const state = useKotlinState(facade)
   const signedIn = list?.signedIn ?? false
-  useEffect(() => { if (signedIn) facade.join() }, [facade, signedIn])
+  // Depends on the facade: a no-op until useFacade has created it, then the join runs once on the live one.
+  useEffect(() => { if (signedIn) facade?.join() }, [facade, signedIn])
   useEffect(() => { if (state?.joinedTripId) navigate(`/app/t/${state.joinedTripId}`, { replace: true }) }, [navigate, state?.joinedTripId])
   const heading = useRef<HTMLHeadingElement>(null)
   /** Retrying removes the "try again" button that was activated, so focus moves to the heading first (WCAG 2.4.3). */
-  const retry = () => { heading.current?.focus(); facade.join() }
+  const retry = () => { heading.current?.focus(); facade?.join() }
 
   const ua = navigator.userAgent
   const phone = /Android|iPhone|iPad/i.test(ua)

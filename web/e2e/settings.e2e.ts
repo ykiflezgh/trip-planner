@@ -3,7 +3,7 @@ import { expect, test } from './fixtures'
 type Page = import('@playwright/test').Page
 
 const openSettings = async (page: Page) => {
-  await page.getByRole('button', { name: 'More ▾' }).click()
+  await page.getByRole('button', { name: 'More', exact: true }).click()
   await page.getByRole('menuitem', { name: /^Settings/ }).click()
   const dialog = page.getByRole('dialog')
   await expect(dialog).toBeVisible()

@@ -25,3 +25,8 @@ dist-ssr
 
 # Kotlin/JS build copied by ./gradlew :shared:packageForWeb
 vendor/
+
+# Lighthouse CI and Playwright output
+.lighthouseci/
+playwright-report/
+test-results/

@@ -30,7 +30,7 @@ export function Shell() {
   }, [perm])
 
   const closeToast = useCallback(() => setToast(null), [])
-  /** Dismissing unmounts the control that was activated, so focus moves to the home link first (WCAG 2.4.3). */
+  /** Dismiss and Open both unmount the control that was activated, so focus moves to the home link first (WCAG 2.4.3); Open then navigates. */
   const dismissToast = useCallback(() => { home.current?.focus(); setToast(null) }, [])
   const dismissError = () => { home.current?.focus(); facade.dismissError() }
 
@@ -81,7 +81,8 @@ export function Shell() {
 /**
  * Foreground push toast (companion §10). One with an "Open" action stays until dismissed; an
  * informational one auto-dismisses after 6 s unless hovered or focused (WCAG 2.2.1). Every toast has
- * a Dismiss button. Hover/focus state lives here so it resets with each toast.
+ * a Dismiss button. The element is reused when a replacement toast arrives, so the hover/focus state
+ * kept here carries over: a held toast stays held while its text changes.
  */
 function PushToast({ toast, onClose, onDismiss }: { toast: Toast; onClose: () => void; onDismiss: () => void }) {
   const [held, setHeld] = useState(false)
@@ -94,7 +95,7 @@ function PushToast({ toast, onClose, onDismiss }: { toast: Toast; onClose: () =>
     <p className="mx-4 mt-2 rounded border border-stone-200 bg-white px-3 py-2 text-sm shadow"
       onMouseEnter={() => setHeld(true)} onMouseLeave={() => setHeld(false)} onFocus={() => setHeld(true)} onBlur={() => setHeld(false)}>
       <span className="font-medium">{toast.title}</span> · {toast.body}
-      {toast.tripId && <Link className="ml-2 text-indigo-700 underline" to={`/app/t/${toast.tripId}`} onClick={onClose}>Open</Link>}
+      {toast.tripId && <Link className="ml-2 text-indigo-700 underline" to={`/app/t/${toast.tripId}`} onClick={onDismiss}>Open</Link>}
       <button type="button" className="ml-2 underline" onClick={onDismiss}>Dismiss</button>
     </p>
   )

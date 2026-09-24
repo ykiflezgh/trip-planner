@@ -14,7 +14,11 @@ export function TripView({ schedules, stopsByDay, dayLabel, selectedDay, selecte
   const days = Array.from({ length: Math.min(PAGE, schedules.length - page * PAGE) }, (_, i) => page * PAGE + i)
   // The day buttons above the grid are its visible headers; each column still carries the day as its accessible name.
   const columns = days.map((d) => ({ day: d, ariaLabel: dayLabel(d), schedule: schedules[d], stops: stopsByDay[d] ?? [] }))
-  const select = (id: string | null) => { const d = days.find((x) => (stopsByDay[x] ?? []).some((s) => s.id === id)); if (d != null) onSelect(d, id) }
+  // A click on the pressed block deselects (null: nothing to look up, the day stays); otherwise the id names its day.
+  const select = (id: string | null) => {
+    if (id === null) { onSelect(selectedDay, null); return }
+    const d = days.find((x) => (stopsByDay[x] ?? []).some((s) => s.id === id)); if (d != null) onSelect(d, id)
+  }
   return (
     <div>
       {pages > 1 && (

@@ -22,13 +22,17 @@ export function DayHoursDialog({ label, start, end, onSave, onClose }: { label: 
   )
 }
 
-/** A required time. Clearing it shows an inline error tied to the field and announced (WCAG 3.3.1, 4.1.3). */
+/**
+ * A required time. Clearing it shows an inline error tied to the field and announced (WCAG 3.3.1, 4.1.3).
+ * The message follows the live value, and a time input passes through incomplete values on every keystroke,
+ * so the region is polite (role="status"): an assertive alert would interrupt each intermediate state.
+ */
 function TimeField({ id, label, value, onChange, error }: { id: string; label: string; value: string; onChange: (v: string) => void; error: string }) {
   const bad = !valid(value)
   return (
     <div className="flex-1">
       <label className="block text-sm">{label}<input id={id} className={field} type="time" value={value} onChange={(x) => onChange(x.target.value)} required aria-invalid={bad || undefined} aria-describedby={`${id}-error`} /></label>
-      <p id={`${id}-error`} role="alert" className={bad ? 'mt-1 text-sm text-red-700' : 'sr-only'}>{bad ? error : ''}</p>
+      <p id={`${id}-error`} role="status" className={bad ? 'mt-1 text-sm text-red-700' : 'sr-only'}>{bad ? error : ''}</p>
     </div>
   )
 }

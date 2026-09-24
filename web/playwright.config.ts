@@ -5,9 +5,10 @@ const PORT = 5174
 const APP = `http://localhost:${PORT}/app/`
 
 /**
- * Playwright suite against the Firebase Emulator Suite (Auth + Firestore), no production credentials:
- * `npm run e2e:emulators` (or `sh e2e/with-emulators.sh npm run e2e`). Specs are `*.e2e.ts` so Vitest's
- * default glob ignores them and tsconfig.app.json (`include: ["src"]`) keeps them out of `tsc -b`.
+ * Playwright suite against the Firebase Emulator Suite (Auth + Firestore) under the offline project id
+ * demo-tripplanner, no production credentials: `npm run e2e:emulators` (or `sh e2e/with-emulators.sh npm run e2e`,
+ * which also sets JAVA_HOME); `npm run e2e:ui` for UI mode, `npm run e2e:typecheck` for the specs' types. Specs
+ * are `*.e2e.ts` so Vitest's default glob ignores them and tsconfig.app.json (`include: ["src"]`) keeps them out of `tsc -b`.
  */
 export default defineConfig({
   testDir: './e2e',
@@ -15,7 +16,7 @@ export default defineConfig({
   globalSetup: './e2e/global-setup.ts',
   fullyParallel: false,
   workers: 1, // one emulator, shared Auth users; trips are per test anyway
-  retries: 1,
+  retries: process.env.CI ? 1 : 0, // a flake is a bug to look at locally; CI gets one retry (and the trace it records)
   timeout: 30_000,
   expect: { timeout: 10_000 },
   reporter: process.env.CI ? [['github'], ['html', { open: 'never' }]] : [['list']],

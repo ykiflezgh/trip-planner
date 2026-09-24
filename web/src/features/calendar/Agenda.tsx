@@ -1,3 +1,4 @@
+import { useRef } from 'react'
 import { DndContext, KeyboardSensor, PointerSensor, closestCenter, useSensor, useSensors, type DragEndEvent } from '@dnd-kit/core'
 import { SortableContext, sortableKeyboardCoordinates, useSortable, verticalListSortingStrategy } from '@dnd-kit/sortable'
 import { CSS } from '@dnd-kit/utilities'
@@ -24,8 +25,14 @@ export interface AgendaEdit {
  */
 export function Agenda({ schedule, stops, legs, selectedId, onSelect, edit }: { schedule: DaySchedule | null; stops: Stop[]; legs: Leg[]; selectedId: string | null; onSelect: (id: string | null) => void; edit?: AgendaEdit }) {
   const sensors = useSensors(useSensor(PointerSensor, { activationConstraint: { distance: 6 } }), useSensor(KeyboardSensor, { coordinateGetter: sortableKeyboardCoordinates }))
-  if (!schedule) return <p className="text-stone-600">Computing…</p>
-  if (schedule.entries.length === 0) return <p className="text-stone-600">No stops on this day yet.</p>
+  // Delete and Move to Day unmount the row that was acted on once the snapshot arrives, so focus is moved first
+  // (WCAG 2.4.3): to a neighbouring row's main button, kept here by stop id, or else to this wrapper, which
+  // outlives the list (the <ol> goes with its last row, replaced by the empty-day message).
+  const root = useRef<HTMLDivElement>(null)
+  const buttons = useRef<Record<string, HTMLButtonElement | null>>({})
+  const wrap = (body: React.ReactNode) => <div ref={root} tabIndex={-1} className="rounded focus:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500">{body}</div>
+  if (!schedule) return wrap(<p className="text-stone-600">Computing…</p>)
+  if (schedule.entries.length === 0) return wrap(<p className="text-stone-600">No stops on this day yet.</p>)
   const byId = new Map(stops.map((s) => [s.id, s]))
   // The list order is the stored order (stops are sorted by key); the schedule keeps it.
   const ordered = schedule.entries.map((e) => byId.get(e.id)).filter((s): s is Stop => !!s)
@@ -45,36 +52,39 @@ export function Agenda({ schedule, stops, legs, selectedId, onSelect, edit }: { 
     const { afterOrder, beforeOrder } = neighboursAfterMove(ordered, i, to)
     edit.move(ordered[i].id, afterOrder, beforeOrder)
   }
+  const leave = (i: number) => (buttons.current[ids[i + 1]] ?? buttons.current[ids[i - 1]] ?? root.current)?.focus()
 
   const rows = schedule.entries.map((e, i) => (
     <Row key={e.id} entry={e} index={i} stop={byId.get(e.id)} legs={legs.filter((l) => l.to === e.id)} warnings={schedule.warnings.filter((w) => w.entryId === e.id)}
-      selected={selectedId === e.id} onSelect={() => onSelect(e.id)} edit={edit} count={ordered.length} nudge={(d) => nudge(i, d)} />
+      selected={selectedId === e.id} onSelect={() => onSelect(selectedId === e.id ? null : e.id)} buttonRef={(el) => { buttons.current[e.id] = el }} leave={() => leave(i)}
+      edit={edit} count={ordered.length} nudge={(d) => nudge(i, d)} />
   ))
-  return (
-    <ol className="divide-y divide-stone-200 rounded border border-stone-200 bg-white">
-      {edit ? (
-        <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={onDragEnd}>
-          <SortableContext items={ids} strategy={verticalListSortingStrategy}>{rows}</SortableContext>
-        </DndContext>
-      ) : rows}
-    </ol>
-  )
+  const list = <ol className="divide-y divide-stone-200 rounded border border-stone-200 bg-white">{rows}</ol>
+  // The drag contexts sit outside the <ol>: dnd-kit renders its own live region and instructions where DndContext
+  // is, and inside the list they would be non-<li> children (WCAG 1.3.1, axe "list").
+  return wrap(edit ? (
+    <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={onDragEnd}>
+      <SortableContext items={ids} strategy={verticalListSortingStrategy}>{list}</SortableContext>
+    </DndContext>
+  ) : list)
 }
 
-function Row({ entry: e, index, stop, legs, warnings, selected, onSelect, edit, count, nudge }: {
+function Row({ entry: e, index, stop, legs, warnings, selected, onSelect, buttonRef, leave, edit, count, nudge }: {
   entry: DaySchedule['entries'][number]; index: number; stop?: Stop; legs: Leg[]; warnings: DaySchedule['warnings']; selected: boolean; onSelect: () => void
-  edit?: AgendaEdit; count: number; nudge: (delta: number) => void
+  buttonRef: (el: HTMLButtonElement | null) => void; leave: () => void; edit?: AgendaEdit; count: number; nudge: (delta: number) => void
 }) {
   const sortable = useSortable({ id: e.id, disabled: !edit })
   const style = { transform: CSS.Transform.toString(sortable.transform), transition: sortable.transition }
   const name = stop?.name ?? e.id
   // The row's actions go through the shared Menu (ARIA menu keyboard model, Escape, focus return), so an
   // open menu never lingers over the next row's controls (WCAG 2.4.11); each trigger is named after its stop.
+  // Move to Day and Delete unmount this row, trigger included, with the next snapshot, so they hand focus to a
+  // neighbour first (WCAG 2.4.3); Menu refocuses the trigger before it runs onSelect, so the move here wins.
   const actions: MenuItem[] = edit ? [
     { label: 'Move up', disabled: index === 0, onSelect: () => nudge(-1) },
     { label: 'Move down', disabled: index === count - 1, onSelect: () => nudge(1) },
-    ...Array.from({ length: edit.dayCount }, (_, d) => d).filter((d) => d !== edit.selectedDay).map((d) => ({ label: `Move to Day ${d + 1}`, onSelect: () => edit.moveToDay(e.id, d) })),
-    { label: 'Delete', danger: true, onSelect: () => { if (confirm(`Remove "${stop?.name ?? 'this stop'}" from the trip?`)) edit.remove(e.id) } },
+    ...Array.from({ length: edit.dayCount }, (_, d) => d).filter((d) => d !== edit.selectedDay).map((d) => ({ label: `Move to Day ${d + 1}`, onSelect: () => { leave(); edit.moveToDay(e.id, d) } })),
+    { label: 'Delete', danger: true, onSelect: () => { if (confirm(`Remove "${stop?.name ?? 'this stop'}" from the trip?`)) { leave(); edit.remove(e.id) } } },
   ] : []
   return (
     <li ref={sortable.setNodeRef} style={style} className={sortable.isDragging ? 'relative z-10 bg-white shadow-lg' : ''}>
@@ -91,7 +101,8 @@ function Row({ entry: e, index, stop, legs, warnings, selected, onSelect, edit, 
           <button {...sortable.attributes} {...sortable.listeners} aria-label={`Reorder ${stop?.name ?? ''}: press Space, move with the arrow keys, press Space again`}
             className="cursor-grab touch-none rounded px-1 text-stone-600 hover:bg-stone-100 focus:ring-2 focus:ring-indigo-400">≡</button>
         )}
-        <button onClick={onSelect} aria-pressed={selected} className="flex flex-1 gap-3 text-left">
+        {/* A true toggle: pressing the selected row clears the selection, as aria-pressed promises. */}
+        <button ref={buttonRef} onClick={onSelect} aria-pressed={selected} className="flex flex-1 gap-3 text-left">
           <span className="w-5 text-stone-600">{index + 1}</span>
           <span className="flex-1">
             <span className="font-medium">{name}</span>
