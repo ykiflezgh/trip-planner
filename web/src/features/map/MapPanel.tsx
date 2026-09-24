@@ -1,13 +1,13 @@
-import { useEffect, useState } from 'react'
-import { APIProvider, Map, Marker, useMap } from '@vis.gl/react-google-maps'
+import { useEffect } from 'react'
+import { Map, Marker, useMap } from '@vis.gl/react-google-maps'
 import type { Stop } from '../../lib/kotlin/tripPlanner'
-
-const KEY = import.meta.env.VITE_MAPS_API_KEY as string | undefined
+import { MAPS_KEY as KEY } from './MapsProvider'
 
 /**
  * Markers numbered by order; selecting one selects the stop in the calendar and back (companion §6.6).
  * Without a referrer-restricted web key (design v1.1.1 §11) it degrades to a stop list. Classic
  * markers on purpose: advanced markers need a cloud Map ID, which the spike does not have yet.
+ * The Maps loader itself is `MapsProvider`, above the trip page, shared with the Places search.
  */
 export function MapPanel({ stops, selectedId, onSelect }: { stops: Stop[]; selectedId: string | null; onSelect: (id: string | null) => void }) {
   const placed = stops.filter((s) => s.lat != null && s.lng != null)
@@ -23,26 +23,18 @@ export function MapPanel({ stops, selectedId, onSelect }: { stops: Stop[]; selec
 }
 
 function LiveMap({ placed, selectedId, onSelect }: { placed: Stop[]; selectedId: string | null; onSelect: (id: string | null) => void }) {
-  // Google reports a rejected key through a global callback, not a promise; surface it in the pane.
-  const [status, setStatus] = useState<string | null>(null)
-  useEffect(() => {
-    ;(window as unknown as { gm_authFailure?: () => void }).gm_authFailure = () => setStatus('Google rejected the Maps key (check API enablement and referrer restrictions).')
-  }, [])
   const sel = placed.find((s) => s.id === selectedId)
   if (placed.length === 0) return <p className="rounded border border-dashed border-stone-300 p-4 text-sm text-stone-500">No stops with a location on this day.</p>
   // Mounted only once stops exist: the Map reads defaultCenter at mount, so an empty first render would leave it at 0,0.
   return (
-    <APIProvider apiKey={KEY!} onError={(e) => setStatus(`Maps failed to load: ${String(e)}`)}>
-      {status && <p className="mb-2 rounded bg-amber-50 px-3 py-2 text-sm text-amber-800">{status}</p>}
-      <Map className="h-full min-h-[320px] rounded border border-stone-200" defaultZoom={13} defaultCenter={{ lat: placed[0].lat!, lng: placed[0].lng! }}
-        center={sel ? { lat: sel.lat!, lng: sel.lng! } : undefined} gestureHandling="greedy" disableDefaultUI>
-        <FitToStops stops={placed} />
-        {placed.map((s, i) => (
-          <Marker key={s.id} position={{ lat: s.lat!, lng: s.lng! }} title={s.name} label={{ text: String(i + 1), color: '#312e81', fontWeight: '600' }}
-            opacity={selectedId && selectedId !== s.id ? 0.6 : 1} onClick={() => onSelect(s.id)} />
-        ))}
-      </Map>
-    </APIProvider>
+    <Map className="h-full min-h-[320px] rounded border border-stone-200" defaultZoom={13} defaultCenter={{ lat: placed[0].lat!, lng: placed[0].lng! }}
+      center={sel ? { lat: sel.lat!, lng: sel.lng! } : undefined} gestureHandling="greedy" disableDefaultUI>
+      <FitToStops stops={placed} />
+      {placed.map((s, i) => (
+        <Marker key={s.id} position={{ lat: s.lat!, lng: s.lng! }} title={s.name} label={{ text: String(i + 1), color: '#312e81', fontWeight: '600' }}
+          opacity={selectedId && selectedId !== s.id ? 0.6 : 1} onClick={() => onSelect(s.id)} />
+      ))}
+    </Map>
   )
 }
 

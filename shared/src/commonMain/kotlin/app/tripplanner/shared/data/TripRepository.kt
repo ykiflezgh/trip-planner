@@ -38,6 +38,8 @@ interface TripRepository {
     fun travel(tripId: String): Flow<List<TravelLeg>>
     /** Issues the write and returns the new id immediately; the trip appears through [myTrips] from the local cache. */
     fun createTrip(trip: Trip): String
+    /** Owner edits the trip's settings (design §3.1 item 2); rules allow `update` for the owner only. */
+    fun updateTripSettings(tripId: String, name: String, startDate: String, endDate: String, timeZone: String, defaultDayStart: String, defaultDayEnd: String, defaultTravelMode: String)
     /** Writes the stop with a fresh fractional key between the neighbours; returns the new id immediately. */
     fun addStop(tripId: String, stop: Stop, afterOrder: String?, beforeOrder: String?): String
     /** [updatedBy] is the acting uid, the Function's fallback actor when the write's auth context is missing (design §10). */
@@ -160,6 +162,21 @@ class FirestoreTripRepository(
         val doc = db.collection("trips").document
         write("create trip") { doc.set(trip.copy(id = doc.id, createdAt = Timestamp.ServerTimestamp, updatedAt = Timestamp.ServerTimestamp)) }
         return doc.id
+    }
+
+    /**
+     * Complexity:
+     * - **Time:** O(1) single-document update.
+     * - **Space:** O(1).
+     */
+    override fun updateTripSettings(tripId: String, name: String, startDate: String, endDate: String, timeZone: String, defaultDayStart: String, defaultDayEnd: String, defaultTravelMode: String) {
+        write("update trip settings") {
+            db.collection("trips").document(tripId).update(
+                "name" to name, "startDate" to startDate, "endDate" to endDate, "timeZone" to timeZone,
+                "defaultDayStart" to defaultDayStart, "defaultDayEnd" to defaultDayEnd, "defaultTravelMode" to defaultTravelMode,
+                "updatedAt" to Timestamp.ServerTimestamp,
+            )
+        }
     }
 
     /**

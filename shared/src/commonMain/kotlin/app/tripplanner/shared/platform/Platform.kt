@@ -59,6 +59,8 @@ data class Reminder(
  * iOS, design §6.4). Only reminders this app scheduled are ever touched.
  */
 interface ReminderScheduler {
+    /** False where the platform cannot schedule background notifications (the web, companion §10): the sync never runs. */
+    val supported: Boolean get() = true
     /** Cancels every reminder previously scheduled here and schedules [reminders] (earliest first, already capped). */
     fun replace(reminders: List<Reminder>)
 }
