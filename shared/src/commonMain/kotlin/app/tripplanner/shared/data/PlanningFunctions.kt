@@ -15,7 +15,8 @@ class PlanningFunctions {
 
     @Serializable data class InviteCreated(val code: String)
     @Serializable data class InviteRedeemed(val tripId: String, val alreadyMember: Boolean = false)
-    @Serializable data class DayOrder(val orderedStopIds: List<String>, val rationale: String = "")
+    /** §8.7: a validated order plus the schedule warnings it still carries (empty when clean). */
+    @Serializable data class DayOrder(val orderedStopIds: List<String>, val rationale: String = "", val warnings: List<String> = emptyList())
     @Serializable data class FeedCreated(val url: String)
     @Serializable data class FeedRevoked(val revoked: Int = 0)
 
@@ -41,6 +42,8 @@ class PlanningFunctions {
     }
 
     /**
+     * Gemini day-order suggestion (design §8.7); the Function validates and scores it before answering.
+     *
      * Complexity:
      * - **Time:** O(K) for the K stop ids returned.
      * - **Space:** O(K).

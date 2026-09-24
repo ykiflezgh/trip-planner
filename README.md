@@ -155,7 +155,19 @@ ETag (304 on `If-None-Match` at the Function URL; Hosting does not forward the h
 the rewrite every refresh is a 200), 429 for fetches under 30 s apart and 404 once revoked
 ("Remove my calendar links") or when the owner left the trip. `AppConfig.calendarFeedEnabled`
 hides the menu items. Tests: `firebase/functions/src/feed.test.ts` parses the output with `ical.js`.
-Not yet built from v1.1 Phase 3: Gemini suggestions.
+**Suggest an order** (branch `suggest-order`, design §8.7): "Suggest an order for Day N" in the trip
+menu (editors, two or more stops) calls `suggestDayOrder`, which loads the day's stops, pinned times,
+day hours and travel legs, prompts Gemini (`gemini-3.6-flash`, REST `generateContent` with a JSON
+response schema, `firebase/functions/src/suggest.ts`) and validates the answer: a permutation of
+the day's ids, pinned entries kept, and no more late-arrival minutes than the current order per the
+schedule engine's Node build; one retry with feedback, then the best candidate is returned with its
+warnings. The client previews it in place (the day's stops are shown in the suggested order, a
+banner carries the rationale and warnings, reordering is frozen) and Apply writes fresh evenly
+spread `order` keys in one batched write. Flags: `SUGGEST_ORDER_ENABLED` param (in each project's
+`functions/.env.*`) and `AppConfig.suggestOrderEnabled`. The `GEMINI_API_KEY` secret is still a
+placeholder on the dev project, so the Function answers "Suggestions are not configured on this
+server yet" until `firebase functions:secrets:set GEMINI_API_KEY` is run with a real key.
+Tests: `firebase/functions/src/suggest.test.ts` (prompt, validation, lateness, retry loop, REST call).
 Still unverified: the Places call shapes in `shared/data/`. Cloud Functions in `firebase/functions/` still carry a TODO for Gemini.
 
 ## Layout

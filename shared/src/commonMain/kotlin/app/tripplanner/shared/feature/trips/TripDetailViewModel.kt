@@ -63,6 +63,12 @@ data class TripDetailUiState(
     val feedUrl: String? = null,
     /** "Add to my calendar" is offered (config flag, design §8.6). */
     val calendarFeedEnabled: Boolean = true,
+    /** "Suggest an order" is offered (config flag, design §8.7). */
+    val suggestOrderEnabled: Boolean = true,
+    /** The suggestion callable is in flight. */
+    val suggesting: Boolean = false,
+    /** A validated suggestion being previewed: [stopsByDay] for its day is already in the suggested order. */
+    val suggestion: DaySuggestion? = null,
 ) {
     /** True while any local write on this trip awaits the server (design §9). */
     val pendingSync: Boolean get() = trip?.pendingSync == true || stopsByDay.values.any { day -> day.any { it.pendingSync } }
@@ -96,6 +102,9 @@ data class TripDetailUiState(
     fun scheduleFor(day: Int): DaySchedule? = trip?.let { DaySchedules.compute(it, day, stopsByDay[day].orEmpty(), legs, dayHours[day]) }
 }
 
+/** Gemini's proposed order for one day (design §8.7), previewed until applied or dismissed. */
+data class DaySuggestion(val day: Int, val orderedStopIds: List<String>, val rationale: String, val warnings: List<String>)
+
 class TripDetailViewModel(
     private val tripId: String,
     private val repo: TripRepository,
@@ -114,10 +123,12 @@ class TripDetailViewModel(
     private val message = MutableStateFlow<String?>(null)
     private val share = MutableStateFlow<Pair<Boolean, String?>>(false to null) // sharing, shareUrl
     private val feed = MutableStateFlow<Pair<Boolean, String?>>(false to null) // calendarBusy, feedUrl
+    private val suggest = MutableStateFlow<Pair<Boolean, DaySuggestion?>>(false to null) // suggesting, suggestion
     /** UI-only state folded into one flow so the outer combine stays within the typed arity. */
     private data class Local(
         val selectedStopId: String?, val selectedDay: Int, val message: String?, val sharing: Boolean, val shareUrl: String?,
         val calendarBusy: Boolean = false, val feedUrl: String? = null,
+        val suggesting: Boolean = false, val suggestion: DaySuggestion? = null,
     )
 
     private val stops = repo.stops(tripId)
@@ -157,11 +168,21 @@ class TripDetailViewModel(
                 s.copy(trip = t, online = online, muted = m, isOwner = role == "owner", canEdit = role == "owner" || role == "editor")
             },
             combine(travel, days) { legs, d -> legs.associateBy { Triple(it.fromStopId, it.toStopId, it.mode) } to d.associateBy { it.day } },
-            combine(selectedStopId, selectedDay, message, share, feed) { sel, day, msg, sh, f -> Local(sel, day, msg, sh.first, sh.second, f.first, f.second) },
+            combine(selectedStopId, selectedDay, message, share, combine(feed, suggest) { f, sg -> f to sg }) { sel, day, msg, sh, fs ->
+                Local(sel, day, msg, sh.first, sh.second, fs.first.first, fs.first.second, fs.second.first, fs.second.second)
+            },
         ) { s, td, l ->
+            // Preview (design §8.7): the suggested day is shown in the proposed order; a suggestion whose
+            // ids no longer match the day (someone added or removed a stop) is dropped.
+            val preview = l.suggestion?.let { sg ->
+                val byId = s.stopsByDay[sg.day].orEmpty().associateBy { it.id }
+                if (sg.orderedStopIds.size == byId.size && sg.orderedStopIds.all { it in byId }) sg.orderedStopIds.map(byId::getValue) else null
+            }
             s.copy(
+                stopsByDay = if (preview != null) s.stopsByDay + (l.suggestion!!.day to preview) else s.stopsByDay,
                 legs = td.first, dayHours = td.second, selectedStopId = l.selectedStopId, selectedDay = l.selectedDay, message = l.message,
                 sharing = l.sharing, shareUrl = l.shareUrl, calendarBusy = l.calendarBusy, feedUrl = l.feedUrl, calendarFeedEnabled = config.calendarFeedEnabled,
+                suggestOrderEnabled = config.suggestOrderEnabled, suggesting = l.suggesting, suggestion = if (preview != null) l.suggestion else null,
             )
         }
             .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), TripDetailUiState())
@@ -312,6 +333,53 @@ class TripDetailViewModel(
                 feed.value = false to null
             }
         }
+    }
+
+    /**
+     * "Suggest an order" for the selected day (design §8.7): the Function asks Gemini, validates and
+     * scores the answer; the result is previewed on the calendar until applied or dismissed.
+     *
+     * Complexity:
+     * - **Time:** O(1) callable round trip.
+     * - **Space:** O(K) for the K ordered ids.
+     */
+    fun suggestOrder() {
+        if (suggest.value.first) return
+        val day = selectedDay.value
+        viewModelScope.launch {
+            suggest.value = true to null
+            try {
+                val r = functions.suggestDayOrder(tripId, day)
+                suggest.value = false to DaySuggestion(day, r.orderedStopIds, r.rationale, r.warnings)
+            } catch (e: Exception) {
+                suggest.value = false to null
+                message.value = e.message ?: "Could not get a suggestion"
+            }
+        }
+    }
+
+    /**
+     * Writes the previewed order as fresh `order` keys in one batch (design §8.7).
+     *
+     * Complexity:
+     * - **Time:** O(K) batched write.
+     * - **Space:** O(K).
+     */
+    fun applySuggestion() {
+        val sg = suggest.value.second ?: return
+        val uid = auth.currentUser?.uid ?: return
+        repo.reorderDay(tripId, sg.day, sg.orderedStopIds, updatedBy = uid)
+        suggest.value = false to null
+        message.value = "Applied the suggested order for Day ${sg.day + 1}"
+    }
+
+    /**
+     * Complexity:
+     * - **Time:** O(1).
+     * - **Space:** O(1).
+     */
+    fun dismissSuggestion() {
+        suggest.value = false to null
     }
 
     /**

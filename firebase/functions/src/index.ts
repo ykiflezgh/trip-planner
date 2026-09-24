@@ -16,7 +16,8 @@ import { getFunctions } from "firebase-admin/functions";
 import * as crypto from "node:crypto";
 import { needsDigest, planNotification, tokensToPrune, type BurstWindow, type EventFacts } from "./burst";
 import { buildMessage, type Notice } from "./notifications";
-import { buildFeed, etagOf, newToken, tokenHash, type FeedDay, type FeedLeg, type FeedStop, type FeedTrip } from "./feed";
+import { buildFeed, etagOf, newToken, tokenHash, tripDates, type FeedDay, type FeedLeg, type FeedStop, type FeedTrip } from "./feed";
+import { callGemini, suggestOrder, type GeminiFetch, type SuggestDay, type SuggestLeg, type SuggestStop } from "./suggest";
 import { MODES, adjacentPairs, computeMatrix, legId, legsFromMatrix, planLegs, type LegDoc, type StopPoint } from "./travel";
 
 initializeApp();
@@ -26,6 +27,8 @@ db.settings({ ignoreUndefinedProperties: true });
 
 const ROUTES_API_KEY = defineSecret("ROUTES_API_KEY");
 const GEMINI_API_KEY = defineSecret("GEMINI_API_KEY");
+/** Kill switch for §8.7 (stands in for the Remote Config flag `suggest_order_enabled`). */
+const SUGGEST_ORDER_ENABLED = defineBoolean("SUGGEST_ORDER_ENABLED", { default: true });
 /**
  * Dev-only: also push to the actor's own devices. Design §10 excludes the actor; with a single
  * test account that would make the fan-out unobservable. Set in .env.<project> for dev only.
@@ -420,31 +423,50 @@ export const flushNotifyDigest = onTaskDispatched<{ tripId: string; actorId: str
 );
 
 /**
- * §8.5 — Gemini proposes an order for one day; validated before returning.
+ * §8.7 — Gemini proposes an order for one day; validated and scored by the schedule engine
+ * (see suggest.ts). Editors only; the client previews the result and applies it as new order keys.
  *
  * Complexity:
- * - Time: O(K) where K is the number of stops on the target day (fetching stops collection and mapping IDs).
- * - Space: O(K) auxiliary space to collect stop IDs.
+ * - Time: O(S + L) per attempt (at most 2) over the day's S stops and L legs, plus the reads.
+ * - Space: O(S + L).
  */
-export const suggestDayOrder = onCall({ secrets: [GEMINI_API_KEY] }, async (req) => {
+export const suggestDayOrder = onCall({ secrets: [GEMINI_API_KEY], timeoutSeconds: 60 }, async (req) => {
   const uid = req.auth?.uid;
-  const { tripId, day } = req.data ?? {};
-  if (!uid) throw new HttpsError("unauthenticated", "sign in first");
-
+  const tripId = String(req.data?.tripId ?? "");
+  const day = Number(req.data?.day);
+  if (!uid || !tripId || !Number.isInteger(day) || day < 0) throw new HttpsError("invalid-argument", "tripId and day are required");
+  if (!SUGGEST_ORDER_ENABLED.value()) throw new HttpsError("unavailable", "Suggestions are switched off right now");
   const trip = await db.doc(`trips/${tripId}`).get();
-  if (!(trip.get("memberIds") ?? []).includes(uid)) throw new HttpsError("permission-denied", "not a member");
+  const role = trip.get("roles")?.[uid];
+  if (!trip.exists || (role !== "owner" && role !== "editor")) throw new HttpsError("permission-denied", "Only editors can ask for suggestions");
+  const apiKey = GEMINI_API_KEY.value();
+  if (!apiKey || apiKey.startsWith("placeholder")) throw new HttpsError("failed-precondition", "Suggestions are not configured on this server yet");
 
-  const stops = await db
-    .collection(`trips/${tripId}/stops`)
-    .where("day", "==", day)
-    .get();
-  const ids = stops.docs.map((d) => d.id);
-
-  // TODO Phase 3: call Gemini (generateContent with responseSchema =
-  // { orderedStopIds: string[], rationale: string }) using GEMINI_API_KEY.value(),
-  // include the travel matrix in the prompt, then validate that orderedStopIds is a
-  // permutation of `ids` before returning. Behind Remote Config flag suggest_order_enabled.
-  return { orderedStopIds: ids, rationale: "placeholder: Gemini call not wired yet" };
+  const [stopsSnap, travelSnap, hoursDoc] = await Promise.all([
+    db.collection(`trips/${tripId}/stops`).where("day", "==", day).get(),
+    db.collection(`trips/${tripId}/travel`).get(),
+    db.doc(`trips/${tripId}/days/${day}`).get(),
+  ]);
+  const stops: SuggestStop[] = stopsSnap.docs
+    .map((d) => ({ id: d.id, name: String(d.get("name") ?? ""), kind: d.get("kind"), order: String(d.get("order") ?? ""), durationMin: Number(d.get("durationMin") ?? 60), fixedStart: d.get("fixedStart") || undefined, modeToNext: d.get("modeToNext") || undefined, notes: d.get("notes") || undefined }))
+    .sort((a, b) => (a.order < b.order ? -1 : a.order > b.order ? 1 : 0));
+  if (stops.length < 2) throw new HttpsError("failed-precondition", "Add at least two stops to this day first");
+  const ids = new Set(stops.map((s) => s.id));
+  const legs: SuggestLeg[] = travelSnap.docs.map((d) => d.data() as SuggestLeg).filter((l) => ids.has(l.fromStopId) && ids.has(l.toStopId));
+  const date = tripDates({ id: tripId, name: "", startDate: String(trip.get("startDate") ?? ""), endDate: String(trip.get("endDate") ?? ""), timeZone: "UTC" })[day];
+  if (!date) throw new HttpsError("invalid-argument", "That day is outside the trip");
+  const dayIn: SuggestDay = {
+    date, start: hoursDoc.get("start") ?? trip.get("defaultDayStart") ?? "09:00", end: hoursDoc.get("end") ?? trip.get("defaultDayEnd") ?? "21:00",
+    defaultMode: String(trip.get("defaultTravelMode") ?? "driving").toLowerCase(),
+  };
+  try {
+    const out = await suggestOrder(dayIn, stops, legs, (prompt) => callGemini(apiKey, prompt, fetch as unknown as GeminiFetch));
+    logger.info("suggestDayOrder", { tripId, day, stops: stops.length, lateMinutes: out.lateMinutes });
+    return { orderedStopIds: out.orderedStopIds, rationale: out.rationale, warnings: out.warnings };
+  } catch (e) {
+    logger.warn("suggestDayOrder failed", { tripId, day, error: String(e) });
+    throw new HttpsError("unavailable", (e as Error).message ?? "Could not get a suggestion");
+  }
 });
 
 /** Hosting domain that serves /cal/** (design §8.6); mirrors AppConfig.appLinkHost on the clients. */
