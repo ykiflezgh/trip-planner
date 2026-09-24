@@ -1,10 +1,11 @@
 import { defineConfig } from 'vite'
 import react from '@vitejs/plugin-react'
+import tailwindcss from '@tailwindcss/vite'
 
 // Served from the existing Hosting site under /app/ (design v1.1.1 §5, companion §14); the landing
 // page and /cal/** stay where they are. Output lands in firebase/hosting/public/app.
 export default defineConfig({
-  plugins: [react()],
+  plugins: [react(), tailwindcss()],
   base: '/app/',
   build: {
     outDir: '../firebase/hosting/public/app',

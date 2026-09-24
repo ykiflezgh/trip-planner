@@ -197,6 +197,23 @@ project's auto-created OAuth web client in Google Cloud Console (Credentials), o
 2026-09-24). Not yet done from W0: sign-in on Safari and Firefox, App Check for web, the Kotlin/JS
 browser test run in CI.
 
+**Web W1 — read views** (branch `web-w1`, companion 0.2 §17): React Router (`/app/`, `/app/t/{tripId}?day=N&view=agenda|day&tz=local`),
+a shell with sign-in state, the trip list, and the trip page: day tabs, Agenda (computed times, pins,
+free time, both travel legs, warnings, exactly the Android labels), a read-only Day view (CSS time
+grid from the schedule's `hoursStart`/`hoursEnd`, hatched legs, warning rings), the time-zone chip
+(shown only when the trip zone differs from the browser's; the shift happens in Kotlin through
+`TimeDisplay.shift`, same as the apps), and a map pane (`@vis.gl/react-google-maps`, markers
+numbered by order, selection synced with the calendar; without `VITE_MAPS_API_KEY` it degrades to a
+stop list; verified with a key on the dev site: classic numbered markers, since advanced markers need a
+cloud Map ID, mounted only once stops exist because the map reads its default centre at mount, and
+fitted to the day's stops; `gm_authFailure` surfaces a rejected key in the pane). Tailwind 4 for styling. Facade additions: `legs` for both modes between consecutive place
+stops, `setLocalTime`, `close()` (a private `ViewModelStore` clears the ViewModel on route leave, since
+`ViewModel.clear()` is internal), and `hoursStart`/`hoursEnd` in the schedule JSON. Hosting now serves
+`/app/**` with `Cache-Control: no-cache` and hashed assets as immutable (a stale cached `index.html`
+bit during the first deploy). Vitest covers the time helpers and the Day-view layout math
+(`npm test` in `web/`). Facades must be created after `start()`, never at module import time
+(React Router evaluates route modules first). Not in W1: editing, Trip view, activity, push, feed dialog, suggestions.
+
 Still unverified: the Places call shapes in `shared/data/`. Cloud Functions in `firebase/functions/` have no open TODOs.
 
 ## Layout

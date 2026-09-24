@@ -1,6 +1,7 @@
 package app.tripplanner.schedule
 
 import kotlinx.datetime.LocalDate
+import kotlinx.datetime.LocalDateTime
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.encodeToString
 import kotlinx.serialization.json.Json
@@ -21,7 +22,15 @@ object ScheduleJson {
     @Serializable
     data class WarningOut(val type: String, val entryId: String, val minutes: Int)
     @Serializable
-    data class DayOut(val date: String, val end: String, val entries: List<EntryOut>, val warnings: List<WarningOut>)
+    data class DayOut(
+        val date: String,
+        val end: String,
+        val entries: List<EntryOut>,
+        val warnings: List<WarningOut>,
+        /** Day hours as wall-clock date-times on the schedule's date (the web Day view draws the grid from these). */
+        val hoursStart: String = "",
+        val hoursEnd: String = "",
+    )
 
     private val json = Json { ignoreUnknownKeys = true; encodeDefaults = true; explicitNulls = false }
 
@@ -68,6 +77,8 @@ object ScheduleJson {
     fun toOut(day: DaySchedule): DayOut = DayOut(
         date = day.date.toString(),
         end = day.end.toString(),
+        hoursStart = LocalDateTime(day.date, day.hours.start).toString(),
+        hoursEnd = LocalDateTime(day.date, day.hours.end).toString(),
         entries = day.entries.map { e ->
             EntryOut(
                 id = e.input.id, start = e.start.toString(), end = e.end.toString(), pinned = e.pinned, gapBeforeMin = e.gapBeforeMin,
