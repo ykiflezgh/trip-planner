@@ -66,15 +66,18 @@ test("suggestOrder throws when both answers are structurally invalid", async () 
 });
 
 test("callClaude forces the propose_order tool and surfaces API errors", async () => {
-  let sent: { url: string; body: string; key: string; version: string } | null = null;
+  let sent: { url: string; body: string; key: string; version: string; workspace?: string } | null = null;
   const ok = await callClaude("k", "hi", async (url, init) => {
-    sent = { url, body: init.body, key: init.headers["x-api-key"], version: init.headers["anthropic-version"] };
+    sent = { url, body: init.body, key: init.headers["x-api-key"], version: init.headers["anthropic-version"], workspace: init.headers["anthropic-workspace-id"] };
     return { ok: true, status: 200, text: async () => JSON.stringify({ content: [{ type: "text", text: "thinking" }, { type: "tool_use", name: "propose_order", input: { orderedStopIds: ["a"], rationale: "r" } }] }) };
   });
   assert.deepEqual(ok, { orderedStopIds: ["a"], rationale: "r" });
   assert.equal(sent!.url, "https://api.anthropic.com/v1/messages");
   assert.equal(sent!.key, "k");
   assert.equal(sent!.version, "2023-06-01");
+  assert.equal(sent!.workspace, undefined);
+  await callClaude("k", "hi", async (_url, init) => { sent = { url: '', body: init.body, key: '', version: '', workspace: init.headers["anthropic-workspace-id"] }; return { ok: true, status: 200, text: async () => JSON.stringify({ content: [{ type: "tool_use", name: "propose_order", input: { orderedStopIds: [], rationale: "" } }] }) } }, "wrkspc_123");
+  assert.equal(sent!.workspace, "wrkspc_123");
   const body = JSON.parse(sent!.body);
   assert.equal(body.model, "claude-sonnet-5");
   assert.deepEqual(body.tool_choice, { type: "tool", name: "propose_order" });

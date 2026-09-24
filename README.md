@@ -266,8 +266,14 @@ without it the button reads "Notifications need setup". Facades: `activity(tripI
 and share / feed / suggestion / mute on the trip facade; `JsPushTokenProvider.requestPermission` only
 reports the browser's permission, since prompts need a user gesture. Verified on the dev site:
 activity rows, feed link created then revoked, invite link created and the join route redirecting
-an existing member into the trip, the suggestion error path (the Anthropic key on dev is still a
-placeholder), and the push button's setup state. Not verified: an actual browser push (needs the
+an existing member into the trip, the push button's setup state, and the suggestion path end to end
+once the real Anthropic key was in place: the org issues organization-level keys, which Anthropic rejects
+without an `anthropic-workspace-id` header, so the Function takes an optional `ANTHROPIC_WORKSPACE_ID`
+param (each project's `functions/.env.*`; empty for a workspace-scoped key). With it, Claude answered in
+about six seconds, the banner showed the rationale, the preview reordered the day with editing frozen,
+and Apply wrote the new keys. The JS Firebase wrapper reports callable errors as "message: details" with
+the details echoing the message; `PlanningFunctions` collapses that shape so server messages no longer
+show twice on the web. Not verified: an actual browser push (needs the
 VAPID key) and a first-time join by a non-member (needs a second account).
 
 Still unverified: the Places call shapes in `shared/data/`. Cloud Functions in `firebase/functions/` have no open TODOs.
