@@ -15,7 +15,8 @@ export function MapsProvider({ children }: { children: React.ReactNode }) {
   if (!MAPS_KEY) return <>{children}</>
   return (
     <APIProvider apiKey={MAPS_KEY} libraries={['places']} onError={(e) => setStatus(`Maps failed to load: ${String(e)}`)}>
-      {status && <p className="mx-4 mt-2 rounded bg-amber-50 px-3 py-2 text-sm text-amber-800">{status}</p>}
+      {/* Mounted from the start: a live region only announces content that changes after it exists (WCAG 4.1.3). */}
+      <p role="alert" className={status ? 'mx-4 mt-2 rounded bg-amber-50 px-3 py-2 text-sm text-amber-800' : 'sr-only'}>{status}</p>
       {children}
     </APIProvider>
   )
