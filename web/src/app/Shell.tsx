@@ -1,14 +1,8 @@
 import { useEffect, useMemo, useState } from 'react'
 import { Link, Outlet } from 'react-router'
-import { tripList } from '../lib/kotlin/tripPlanner'
+import { firebaseConfig, listFacade } from './session'
 import { useKotlinState } from '../hooks/useKotlinState'
 import { enablePush, onForegroundPush, pushConfigured, pushPermission } from '../lib/push/webPush'
-
-let cached: ReturnType<typeof tripList> | null = null
-/** One trip-list facade for the session, created on first use (after `start()` in main.tsx, never at import time). */
-export const listFacade = () => (cached ??= tripList())
-
-export const firebaseConfig: Record<string, string> = JSON.parse(import.meta.env.VITE_FIREBASE_CONFIG ?? '{}')
 
 export function Shell() {
   const facade = useMemo(() => listFacade(), [])

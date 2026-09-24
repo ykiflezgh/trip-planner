@@ -2,7 +2,7 @@ import { useEffect, useMemo } from 'react'
 import { useNavigate, useParams } from 'react-router'
 import { join } from '../../lib/kotlin/tripPlanner'
 import { useKotlinState } from '../../hooks/useKotlinState'
-import { listFacade } from '../../app/Shell'
+import { listFacade } from '../../app/session'
 
 /**
  * /join/{code} (companion §8.5): on phones the OS intercepts the link for the app first; this page

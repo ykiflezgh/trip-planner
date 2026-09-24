@@ -1,0 +1,29 @@
+{
+  "parameters": {
+    "web_client_enabled": {
+      "defaultValue": { "value": "true" },
+      "valueType": "BOOLEAN",
+      "description": "Web companion §14: when false, /app/t/** shows a coming-soon page while /join/** keeps working."
+    },
+    "calendar_feed_enabled": {
+      "defaultValue": { "value": "true" },
+      "valueType": "BOOLEAN",
+      "description": "Design §8.6: offers Add to my calendar (ICS feed)."
+    },
+    "suggest_order_enabled": {
+      "defaultValue": { "value": "true" },
+      "valueType": "BOOLEAN",
+      "description": "Design §8.7: offers Suggest an order (Claude)."
+    },
+    "reminders_enabled": {
+      "defaultValue": { "value": "true" },
+      "valueType": "BOOLEAN",
+      "description": "Design §8.5: offers time-to-leave reminders on the apps."
+    },
+    "transit_mode_enabled": {
+      "defaultValue": { "value": "false" },
+      "valueType": "BOOLEAN",
+      "description": "Design §18 #2: transit directions stay off in v1."
+    }
+  }
+}

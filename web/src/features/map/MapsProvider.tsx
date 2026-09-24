@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react'
 import { APIProvider } from '@vis.gl/react-google-maps'
 
-export const MAPS_KEY = (import.meta.env.VITE_MAPS_API_KEY as string | undefined) || undefined
+import { MAPS_KEY } from '../../lib/maps'
 
 /**
  * One Maps JavaScript API loader per trip page (map pane and Places search share it). Google

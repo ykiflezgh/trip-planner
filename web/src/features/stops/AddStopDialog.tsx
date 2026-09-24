@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
 import { useMapsLibrary } from '@vis.gl/react-google-maps'
-import { Modal, field, primary, secondary } from '../../components/Modal'
+import { Modal, field, primary } from '../../components/Modal'
 
 export interface PlacePick { placeId: string; name: string; address: string; lat: number; lng: number }
 interface Suggestion { placeId: string; primary: string; secondary: string; toPlace: () => google.maps.places.Place }
@@ -38,8 +38,10 @@ function PlaceForm({ onAdd }: { onAdd: (p: PlacePick, durationMin: number, notes
   const [error, setError] = useState<string | null>(null)
   const token = useRef<google.maps.places.AutocompleteSessionToken | null>(null)
 
+  // Suggestions are only shown while a long-enough query is typed and nothing is picked; the effect only fetches.
+  const visible = !pick && query.trim().length >= 3 ? items : []
   useEffect(() => {
-    if (!places || query.trim().length < 3 || pick) { setItems([]); return }
+    if (!places || query.trim().length < 3 || pick) return
     const handle = setTimeout(async () => {
       try {
         token.current ??= new places.AutocompleteSessionToken()
@@ -69,9 +71,9 @@ function PlaceForm({ onAdd }: { onAdd: (p: PlacePick, durationMin: number, notes
       <label className="block text-sm">Search a place
         <input className={field} value={query} onChange={(e) => { setQuery(e.target.value); setPick(null) }} placeholder="Louvre" autoFocus />
       </label>
-      {items.length > 0 && (
+      {visible.length > 0 && (
         <ul className="max-h-48 overflow-auto rounded border border-stone-200">
-          {items.map((s) => <li key={s.placeId}><button type="button" className="w-full px-3 py-2 text-left text-sm hover:bg-stone-50" onClick={() => choose(s)}><span className="font-medium">{s.primary}</span> <span className="text-stone-500">{s.secondary}</span></button></li>)}
+          {visible.map((s) => <li key={s.placeId}><button type="button" className="w-full px-3 py-2 text-left text-sm hover:bg-stone-50" onClick={() => choose(s)}><span className="font-medium">{s.primary}</span> <span className="text-stone-500">{s.secondary}</span></button></li>)}
         </ul>
       )}
       {pick && <p className="text-sm text-stone-600">{pick.address}</p>}
@@ -107,4 +109,3 @@ function DurationNotes({ duration, setDuration, notes, setNotes }: { duration: n
   )
 }
 
-export const secondaryButton = secondary

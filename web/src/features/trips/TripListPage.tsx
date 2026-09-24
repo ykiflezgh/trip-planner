@@ -1,7 +1,7 @@
 import { useMemo } from 'react'
 import { Link } from 'react-router'
 import { useKotlinState } from '../../hooks/useKotlinState'
-import { listFacade } from '../../app/Shell'
+import { listFacade } from '../../app/session'
 
 export function TripListPage() {
   const facade = useMemo(() => listFacade(), [])

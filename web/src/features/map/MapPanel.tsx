@@ -1,7 +1,7 @@
 import { useEffect } from 'react'
 import { Map, Marker, useMap } from '@vis.gl/react-google-maps'
 import type { Stop } from '../../lib/kotlin/tripPlanner'
-import { MAPS_KEY as KEY } from './MapsProvider'
+import { MAPS_KEY as KEY } from '../../lib/maps'
 
 /**
  * Markers numbered by order; selecting one selects the stop in the calendar and back (companion §6.6).

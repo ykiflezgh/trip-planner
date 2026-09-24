@@ -1,20 +1,10 @@
-import { useEffect, useRef, useState } from 'react'
+import { useRef, useState } from 'react'
 import type { DaySchedule, Stop } from '../../lib/kotlin/tripPlanner'
 import { hhmm, minutesFrom } from '../../lib/time'
-import { SLOT_MIN, snap, timeAt } from '../../lib/grid'
+import { layout, SLOT } from '../../lib/layout'
+import { snap, timeAt } from '../../lib/grid'
 
 const PX_PER_MIN = 1.2 // 72 px per hour
-const SLOT = SLOT_MIN
-
-/** Grid geometry shared with the tests: rows are minutes from the day's start. */
-export function layout(schedule: DaySchedule) {
-  const origin = schedule.hoursStart
-  const endMin = Math.max(minutesFrom(origin, schedule.hoursEnd), minutesFrom(origin, schedule.end)) + SLOT
-  const totalMin = Math.ceil(endMin / 60) * 60
-  const blocks = schedule.entries.map((e) => ({ id: e.id, top: minutesFrom(origin, e.start), height: Math.max(SLOT, minutesFrom(e.start, e.end)), pinned: e.pinned }))
-  const legs = schedule.entries.flatMap((e) => (e.travelBefore ? [{ id: `${e.travelBefore.from}_${e.id}`, top: minutesFrom(origin, e.travelBefore.start), height: minutesFrom(e.travelBefore.start, e.travelBefore.end), pending: e.travelBefore.pending, mode: e.travelBefore.mode }] : []))
-  return { totalMin, blocks, legs }
-}
 
 export interface GridColumn { day: number; label?: string; schedule: DaySchedule | null; stops: Stop[] }
 export interface GridEdit {
@@ -139,11 +129,4 @@ export function TimeGrid({ columns, selectedId, onSelect, edit, compact = false 
 /** One day (the Day view). */
 export function DayView({ day, schedule, stops, selectedId, onSelect, edit }: { day: number; schedule: DaySchedule | null; stops: Stop[]; selectedId: string | null; onSelect: (id: string | null) => void; edit?: GridEdit }) {
   return <TimeGrid columns={[{ day, schedule, stops }]} selectedId={selectedId} onSelect={onSelect} edit={edit} />
-}
-
-/** Screen-reader announcements for commits (companion §6.6). */
-export function useAnnouncer(): [string, (t: string) => void] {
-  const [text, setText] = useState('')
-  useEffect(() => { if (!text) return; const t = setTimeout(() => setText(''), 4000); return () => clearTimeout(t) }, [text])
-  return [text, setText]
 }

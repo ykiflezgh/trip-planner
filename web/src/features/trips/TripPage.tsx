@@ -8,7 +8,8 @@ import { AddStopDialog } from '../stops/AddStopDialog'
 import { DayHoursDialog } from './DayHoursDialog'
 import { TripSettingsDialog } from './TripSettingsDialog'
 import { appendKeys } from '../../lib/order'
-import { DayView, useAnnouncer, type GridEdit } from '../calendar/DayView'
+import { DayView, type GridEdit } from '../calendar/DayView'
+import { useAnnouncer } from '../../hooks/useAnnouncer'
 import { TripView } from '../calendar/TripView'
 import { EntryDialog } from '../calendar/EntryDialog'
 import { neighboursForTime } from '../../lib/grid'
@@ -17,7 +18,8 @@ import { ShareDialog } from '../invites/ShareDialog'
 import { FeedDialog } from '../feed/FeedDialog'
 import { SuggestionBanner } from '../suggest/SuggestionBanner'
 import { MapPanel } from '../map/MapPanel'
-import { MAPS_KEY, MapsProvider } from '../map/MapsProvider'
+import { MapsProvider } from '../map/MapsProvider'
+import { MAPS_KEY } from '../../lib/maps'
 
 type View = 'agenda' | 'day' | 'trip'
 
@@ -51,12 +53,10 @@ export function TripPage() {
   const urlStop = params.get('stop')
   useEffect(() => { if (urlStop) facade.selectStop(urlStop) }, [facade, urlStop])
   const showActivity = params.get('panel') === 'activity'
-  // One-shot share and feed links from the ViewModel become dialogs.
-  useEffect(() => { if (state?.feedUrl || state?.shareUrl) setMenu(false) }, [state?.feedUrl, state?.shareUrl])
 
   const set = (patch: Record<string, string | null>) => {
     const next = new URLSearchParams(params)
-    for (const [k, v] of Object.entries(patch)) v === null ? next.delete(k) : next.set(k, v)
+    for (const [k, v] of Object.entries(patch)) { if (v === null) next.delete(k); else next.set(k, v) }
     setParams(next, { replace: true })
   }
 
