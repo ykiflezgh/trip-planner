@@ -9,6 +9,7 @@ import app.tripplanner.shared.platform.ReminderScheduler
 import app.tripplanner.shared.platform.ShareSheet
 import app.tripplanner.shared.platform.SignInCancelledException
 import app.tripplanner.shared.web.externals.GoogleAuthProvider
+import kotlin.js.json
 import app.tripplanner.shared.web.externals.getAuth
 import app.tripplanner.shared.web.externals.signInWithPopup
 import app.tripplanner.shared.web.externals.signInWithRedirect
@@ -48,6 +49,9 @@ class JsGoogleSignInProvider : GoogleSignInProvider {
     override suspend fun signIn(): GoogleTokens {
         val auth = getAuth()
         val provider = GoogleAuthProvider()
+        // Always show Google's account chooser: with one Google session in the browser, Google would otherwise sign the
+        // same account straight back in after Sign out (the web counterpart of clearing the Credential Manager state on Android).
+        provider.setCustomParameters(json("prompt" to "select_account"))
         val result: dynamic = try {
             signInWithPopup(auth, provider).await()
         } catch (e: Throwable) {
