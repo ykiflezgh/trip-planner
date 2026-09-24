@@ -170,6 +170,33 @@ retired for new users, then prepaid-credit billing); the unused `GEMINI_API_KEY`
 deleted. Until `firebase functions:secrets:set ANTHROPIC_API_KEY` is run with a real key the
 Function answers "Suggestions are not configured on this server yet".
 Tests: `firebase/functions/src/suggest.test.ts` (prompt, validation, lateness, retry loop, REST call).
+**Web W0 spike** (branch `web-spike`, design v1.1.1 §18 #10, companion 0.2 §17): the Kotlin core
+runs in the browser. `shared/` and `schedule/` gained a `js(IR) { browser() }` target (`useEsModules()`
+on `shared`, because Vite loads ES modules natively in dev; UMD only works once bundled);
+`shared/src/jsMain` holds the browser actuals for the platform seams (popup/redirect Google sign-in
+via the Firebase Web SDK, `navigator.onLine`, Web Share, no-op push and reminders) and the
+`@JsExport` facade `TripPlannerWeb` (`start`, `tripList()`, `tripDetail(id)`, `computeDay`; state via
+`subscribe(callback)`, suspend calls as Promises). `./gradlew :shared:packageForWeb` syncs the build
+into `web/vendor/shared`; `web/` is a Vite + React app served at `/app/**` on the Hosting site (rewrite
+added), with a preview channel per `firebase hosting:channel:deploy`. Go/no-go answers: (1) every
+dependency resolved for JS, including `lifecycle-viewmodel-js` 2.9.2, so the ViewModel base class
+stays; all 52 `commonTest` tests pass on Node (`:shared:jsNodeTest`); (2) the Kotlin chunk is
+**378 KB gzipped** (2.0 MB raw) against the 500 KB budget, beside a 99 KB Firebase SDK chunk and a
+70 KB app chunk. Ktor (~130 KB of the library, unused on the web where Places goes through the JS
+library) is the obvious trim. Verified in the browser: engine output matches the Node fixture,
+Firebase and Koin start, auth state drives the sign-in button. Open item: awaiting a Firebase promise
+from a coroutine on `Dispatchers.Main` (`scope.promise { getRedirectResult(...).await() }`) logged
+"Fatal exception in coroutines machinery" with kotlinx-coroutines 1.10.2 on JS; the redirect check
+is a plain promise chain until that is understood. Sign-in findings: the desktop app's browser pane blocks popups, so the SDK falls back to
+`signInWithRedirect`; a redirect with the default `firebaseapp.com` auth domain never completes on
+`localhost` (third-party storage partitioning), so `authDomain` is the Hosting domain
+(`tripplanner-dev-fe0a4.web.app`, first-party, companion §11). That in turn needs
+`https://tripplanner-dev-fe0a4.web.app/__/auth/handler` added to the authorized redirect URIs of the
+project's auto-created OAuth web client in Google Cloud Console (Credentials), or Google answers
+`redirect_uri_mismatch`. With that URI added, redirect sign-in on the deployed site works end to end (verified
+2026-09-24). Not yet done from W0: sign-in on Safari and Firefox, App Check for web, the Kotlin/JS
+browser test run in CI.
+
 Still unverified: the Places call shapes in `shared/data/`. Cloud Functions in `firebase/functions/` have no open TODOs.
 
 ## Layout

@@ -2,6 +2,7 @@ package app.tripplanner.schedule
 
 import kotlinx.datetime.LocalDate
 import kotlinx.serialization.Serializable
+import kotlinx.serialization.encodeToString
 import kotlinx.serialization.json.Json
 
 /**
@@ -55,6 +56,15 @@ object ScheduleJson {
      * - **Time:** O(E + W).
      * - **Space:** O(E + W).
      */
+    /**
+     * A computed day as JSON text (the web facade hands schedules to React this way).
+     *
+     * Complexity:
+     * - **Time:** O(E) for E entries.
+     * - **Space:** O(E).
+     */
+    fun encode(day: DaySchedule): String = json.encodeToString(toOut(day))
+
     fun toOut(day: DaySchedule): DayOut = DayOut(
         date = day.date.toString(),
         end = day.end.toString(),

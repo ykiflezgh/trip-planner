@@ -35,6 +35,10 @@
       {
         "source": "/join/**",
         "destination": "/index.html"
+      },
+      {
+        "source": "/app/**",
+        "destination": "/app/index.html"
       }
     ],
     "headers": [
