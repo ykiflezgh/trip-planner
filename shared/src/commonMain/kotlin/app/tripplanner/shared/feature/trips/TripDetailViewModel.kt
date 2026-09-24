@@ -470,6 +470,18 @@ class TripDetailViewModel(
     }
 
     /**
+     * Drop on another day's time grid (companion §6.6): moves the entry to [day] at [order] and pins it, one write.
+     *
+     * Complexity:
+     * - **Time:** O(1) queued write.
+     * - **Space:** O(1).
+     */
+    fun pinEntryOnDay(stopId: String, day: Int, hhmm: String, order: String) {
+        if (Schedule.parseTime(hhmm) == null || day !in 0 until state.value.dayCount) return
+        repo.pinOnDay(tripId, stopId, day, order, hhmm, updatedBy = auth.currentUser?.uid.orEmpty())
+    }
+
+    /**
      * Returns an entry to the computed flow.
      *
      * Complexity:

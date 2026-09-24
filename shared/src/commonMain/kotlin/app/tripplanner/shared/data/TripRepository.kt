@@ -52,6 +52,8 @@ interface TripRepository {
     /** Pins (`"HH:mm"`) or unpins (`null`) an entry's start and, when given, moves it to [order] in one write (design §8.4 step 2). */
     fun setFixedStart(tripId: String, stopId: String, fixedStart: String?, order: String?, updatedBy: String)
     fun setDuration(tripId: String, stopId: String, durationMin: Int, updatedBy: String)
+    /** Cross-day drop on a time (companion §6.6): day, order and pin in one write so members never see a half-moved entry. */
+    fun pinOnDay(tripId: String, stopId: String, day: Int, order: String, fixedStart: String, updatedBy: String)
     fun setDayHours(tripId: String, day: Int, start: String, end: String, updatedBy: String)
 }
 
@@ -162,6 +164,18 @@ class FirestoreTripRepository(
         val doc = db.collection("trips").document
         write("create trip") { doc.set(trip.copy(id = doc.id, createdAt = Timestamp.ServerTimestamp, updatedAt = Timestamp.ServerTimestamp)) }
         return doc.id
+    }
+
+    /**
+     * Complexity:
+     * - **Time:** O(1) single-document update.
+     * - **Space:** O(1).
+     */
+    override fun pinOnDay(tripId: String, stopId: String, day: Int, order: String, fixedStart: String, updatedBy: String) {
+        write("move and pin entry") {
+            db.collection("trips").document(tripId).collection("stops").document(stopId)
+                .update("day" to day, "order" to order, "fixedStart" to fixedStart, "updatedBy" to updatedBy, "updatedAt" to Timestamp.ServerTimestamp)
+        }
     }
 
     /**

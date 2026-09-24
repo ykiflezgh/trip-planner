@@ -4,6 +4,7 @@ import app.tripplanner.schedule.ScheduleJs
 import app.tripplanner.shared.web.externals.getAuth
 import app.tripplanner.shared.web.externals.getRedirectResult
 import app.tripplanner.shared.core.model.TravelMode
+import app.tripplanner.shared.core.util.FractionalIndex
 import app.tripplanner.shared.core.model.Trip
 import app.tripplanner.shared.feature.calendar.TimeDisplay
 import app.tripplanner.shared.feature.trips.TripDays
@@ -146,6 +147,20 @@ class TripDetailFacade internal constructor(private val vm: TripDetailViewModel,
     fun deleteStop(stopId: String) = vm.deleteStop(stopId)
     fun setDayHours(day: Int, start: String, end: String) = vm.setDayHours(day, start, end)
     fun pinEntry(stopId: String, hhmm: String, order: String?) = vm.pinEntry(stopId, hhmm, order)
+    /**
+     * Drag-to-pin from the grids (design §6.6): the key between the chronological neighbours is
+     * computed here so every client uses one fractional-index algorithm; [keepOrder] skips the key
+     * when the entry is already between those neighbours. A different [day] moves and pins in one write.
+     *
+     * Complexity:
+     * - **Time:** O(L) for the key of length L.
+     * - **Space:** O(L).
+     */
+    fun pinAt(stopId: String, day: Int, hhmm: String, afterOrder: String?, beforeOrder: String?, keepOrder: Boolean) {
+        val currentDay = vm.state.value.stopsByDay.entries.firstOrNull { (_, s) -> s.any { it.id == stopId } }?.key
+        val order = if (keepOrder && day == currentDay) null else FractionalIndex.between(afterOrder, beforeOrder)
+        if (currentDay == null || day == currentDay) vm.pinEntry(stopId, hhmm, order) else vm.pinEntryOnDay(stopId, day, hhmm, order ?: FractionalIndex.between(afterOrder, beforeOrder))
+    }
     fun unpinEntry(stopId: String) = vm.unpinEntry(stopId)
     fun resizeEntry(stopId: String, durationMin: Int) = vm.resizeEntry(stopId, durationMin)
     fun updateSettings(name: String, startDate: String, endDate: String, timeZone: String, defaultDayStart: String, defaultDayEnd: String, defaultTravelMode: String) =
@@ -215,8 +230,18 @@ private fun TripDetailUiState.toJs(local: Boolean): dynamic {
     val device = TimeZone.currentSystemDefault()
     val date = trip?.let { TripDays.date(it, selectedDay) }
     val differs = tripZone != null && date != null && TimeDisplay.differs(tripZone, device, LocalDateTime(date, LocalTime(12, 0)))
-    val shown = schedule?.let { if (local && differs && tripZone != null) TimeDisplay.shift(it, tripZone, device) else it }
-    o.scheduleJson = shown?.let { app.tripplanner.schedule.ScheduleJson.encode(it) }
+    fun display(s: app.tripplanner.schedule.DaySchedule) = if (local && differs && tripZone != null) TimeDisplay.shift(s, tripZone, device) else s
+    o.scheduleJson = schedule?.let { app.tripplanner.schedule.ScheduleJson.encode(display(it)) }
+    // Every day for the Trip view (companion §6.6); the day's stops travel with it for names and coordinates.
+    o.schedules = (0 until dayCount).map { d -> scheduleFor(d)?.let { app.tripplanner.schedule.ScheduleJson.encode(display(it)) } }.toTypedArray()
+    o.stopsByDay = (0 until dayCount).map { d ->
+        stopsByDay[d].orEmpty().map { s ->
+            val j = obj()
+            j.id = s.id; j.name = s.name; j.kind = s.kind; j.day = s.day; j.order = s.order; j.durationMin = s.durationMin
+            j.fixedStart = s.fixedStart; j.address = s.address; j.lat = s.lat; j.lng = s.lng; j.notes = s.notes
+            j
+        }.toTypedArray()
+    }.toTypedArray()
     o.tripZone = trip?.timeZone; o.deviceZone = device.id; o.zoneDiffers = differs; o.localTime = local && differs
     o.zoneLabel = TimeDisplay.label(if (local && differs) device.id else trip?.timeZone.orEmpty())
     return o

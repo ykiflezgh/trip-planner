@@ -8,11 +8,14 @@ import { AddStopDialog } from '../stops/AddStopDialog'
 import { DayHoursDialog } from './DayHoursDialog'
 import { TripSettingsDialog } from './TripSettingsDialog'
 import { appendKeys } from '../../lib/order'
-import { DayView } from '../calendar/DayView'
+import { DayView, useAnnouncer, type GridEdit } from '../calendar/DayView'
+import { TripView } from '../calendar/TripView'
+import { EntryDialog } from '../calendar/EntryDialog'
+import { neighboursForTime } from '../../lib/grid'
 import { MapPanel } from '../map/MapPanel'
 import { MAPS_KEY, MapsProvider } from '../map/MapsProvider'
 
-type View = 'agenda' | 'day'
+type View = 'agenda' | 'day' | 'trip'
 
 /**
  * Open trip: one facade (one ViewModel, scoped listeners) for the route's lifetime; day and view
@@ -25,9 +28,13 @@ export function TripPage() {
   useEffect(() => () => facade.close(), [facade])
   const state = useKotlinState(facade)
   const schedule = useMemo(() => parseSchedule(state?.scheduleJson ?? null), [state?.scheduleJson])
-  const view: View = params.get('view') === 'day' ? 'day' : 'agenda'
+  const view: View = params.get('view') === 'day' ? 'day' : params.get('view') === 'trip' ? 'trip' : 'agenda'
+  const [announcement, announce] = useAnnouncer()
+  const [editId, setEditId] = useState<string | null>(null)
+  const wide = typeof window !== 'undefined' && window.matchMedia('(min-width: 1024px)').matches
   const [pane, setPane] = useState<'calendar' | 'map'>('calendar')
   const [dialog, setDialog] = useState<'add' | 'hours' | 'settings' | null>(null)
+  const schedules = useMemo(() => (state?.schedules ?? []).map(parseSchedule), [state?.schedules])
   const hasMaps = Boolean(MAPS_KEY)
 
   // URL -> ViewModel (day) and toggle; the ViewModel is the source of truth for the selection.
@@ -50,6 +57,20 @@ export function TripPage() {
   if (state.error && !state.trip) return <p className="p-4 text-red-700">{state.error}</p>
   const trip = state.trip
   const days = Array.from({ length: state.dayCount }, (_, d) => d)
+  // Grid edits (design §6.6): the drop time and the chronological neighbours go to Kotlin, which computes the key.
+  const gridEdit: GridEdit | undefined = state.canEdit ? {
+    pin: (id, day, time) => {
+      const sch = schedules[day]
+      const entries = (sch?.entries ?? []).map((e) => ({ id: e.id, start: e.start, order: (state.stopsByDay[day] ?? []).find((s) => s.id === e.id)?.order ?? '' }))
+      const n = neighboursForTime(entries, id, `${sch?.date ?? ''}T${time}`)
+      facade.pinAt(id, day, time, n.afterOrder, n.beforeOrder, n.keepOrder)
+    },
+    resize: (id, min) => facade.resizeEntry(id, min),
+    moveToDay: (id, day) => { if (day < state.dayCount) facade.moveToDay(id, day) },
+    open: (id) => setEditId(id),
+    announce,
+  } : undefined
+  const editStop = editId ? state.stopsByDay.flat().find((s) => s.id === editId) ?? null : null
 
   return (
     <MapsProvider>
@@ -77,6 +98,7 @@ export function TripPage() {
       <div className="mb-3 flex flex-wrap items-center gap-2 text-sm">
         <Chip active={view === 'agenda'} onClick={() => set({ view: null })}>Agenda</Chip>
         <Chip active={view === 'day'} onClick={() => set({ view: 'day' })}>Day</Chip>
+        {state.dayCount > 1 && <Chip active={view === 'trip'} onClick={() => set({ view: 'trip' })}>Trip</Chip>}
         {state.zoneDiffers && (
           <Chip active={state.localTime} onClick={() => set({ tz: state.localTime ? null : 'local' })} title={`Trip zone ${state.tripZone}; you are in ${state.deviceZone}`}>
             {state.localTime ? `Local time · ${state.zoneLabel}` : `Trip time · ${state.zoneLabel}`}
@@ -90,8 +112,11 @@ export function TripPage() {
       </div>
       <div className="grid gap-4 lg:grid-cols-[minmax(0,3fr)_minmax(0,2fr)]">
         <section className={pane === 'map' ? 'hidden lg:block' : ''}>
-          {view === 'day'
-            ? <DayView schedule={schedule} stops={state.stops} selectedId={state.selectedStopId} onSelect={(id) => facade.selectStop(id)} />
+          {view === 'trip'
+            ? <TripView schedules={schedules} stopsByDay={state.stopsByDay} dayLabel={(d) => dayLabel(trip?.startDate ?? '', d)} selectedDay={state.selectedDay} selectedId={state.selectedStopId}
+                onSelect={(d, id) => { set({ day: String(d) }); facade.selectStop(id) }} onSelectDay={(d) => set({ day: String(d) })} edit={wide ? gridEdit : undefined} />
+            : view === 'day'
+            ? <DayView day={state.selectedDay} schedule={schedule} stops={state.stops} selectedId={state.selectedStopId} onSelect={(id) => facade.selectStop(id)} edit={gridEdit} />
             : <Agenda schedule={schedule} stops={state.stops} legs={state.legs} selectedId={state.selectedStopId} onSelect={(id) => facade.selectStop(id)}
                 edit={state.canEdit ? {
                   move: (id, after, before) => facade.moveStop(id, state.selectedDay, after, before),
@@ -104,6 +129,12 @@ export function TripPage() {
           <MapPanel stops={state.stops} selectedId={state.selectedStopId} onSelect={(id) => facade.selectStop(id)} />
         </aside>
       </div>
+      <p aria-live="polite" className="sr-only">{announcement}</p>
+      {view === 'trip' && !wide && state.canEdit && <p className="mt-2 text-xs text-stone-500">Trip view is read-only at this width; widen the window to drag across days.</p>}
+      {editStop && (
+        <EntryDialog stop={editStop} entry={schedules[editStop.day]?.entries.find((e) => e.id === editStop.id)}
+          onPin={(t) => gridEdit?.pin(editStop.id, editStop.day, t)} onResize={(m) => facade.resizeEntry(editStop.id, m)} onUnpin={() => facade.unpinEntry(editStop.id)} onClose={() => setEditId(null)} />
+      )}
       {dialog === 'add' && (
         <AddStopDialog hasMaps={hasMaps} onClose={() => setDialog(null)}
           onAddPlace={(p, duration, notes) => { const k = appendKeys(state.stops); facade.addPlaceStop(p.placeId, p.name, p.address, p.lat, p.lng, duration, notes, state.selectedDay, k.afterOrder, k.beforeOrder); setDialog(null) }}

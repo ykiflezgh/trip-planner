@@ -234,6 +234,20 @@ and an invalid zone rejected by the settings dialog with the message bar. Vitest
 (neighbour keys for reorders added). Not in W2: Day-view drag-to-pin and resize, cross-day drag
 (W3), collaboration features (W4).
 
+**Web W3 — calendar editing** (branch `web-w3`, companion 0.2 §17): the time grid (`TimeGrid` in
+`features/calendar/DayView.tsx`) is editable: drag a block to pin it (15-minute snap; the drop time and
+its chronological neighbours go to Kotlin, whose `pinAt` computes the fractional key so every client
+uses one algorithm), drag the bottom edge to resize, and on a focused block ArrowUp/Down pin ±15 min,
+Shift+Arrow resize ±15 min, Alt+Left/Right change day, Enter opens the edit form (start, duration,
+Unpin) as the keyboard and screen-reader path; commits are announced through an `aria-live` region.
+**Trip view**: up to seven day columns on a shared axis with paging, editable at 1024 px and above and
+read-only below; a drop in another column moves and pins in one write (`TripRepository.pinOnDay`,
+`TripDetailViewModel.pinEntryOnDay`). The facade now emits every day's schedule and stops. Gotcha:
+the drag lives in a ref as well as state, because a fast pointer-up can land before React re-renders
+and would otherwise read a stale null. Verified on the dev site with a temporary entry on Day 3:
+keyboard pin and resize with announcements, Unpin from the dialog, a real pointer drag to 11:00, and a
+cross-day move from the Trip view. Vitest: 11 tests (snap, time offsets, chronological neighbours).
+
 Still unverified: the Places call shapes in `shared/data/`. Cloud Functions in `firebase/functions/` have no open TODOs.
 
 ## Layout
