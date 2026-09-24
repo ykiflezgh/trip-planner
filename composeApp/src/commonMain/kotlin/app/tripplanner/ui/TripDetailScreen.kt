@@ -197,7 +197,7 @@ fun TripDetailScreen(tripId: String, name: String, focusStopId: String? = null, 
                         }
                         if (state.canEdit && state.suggestOrderEnabled && state.stopsForSelectedDay.size >= 2) {
                             DropdownMenuItem(
-                                text = { Text(if (state.suggesting) "Asking Gemini\u2026" else "Suggest an order for Day ${state.selectedDay + 1}") },
+                                text = { Text(if (state.suggesting) "Asking Claude\u2026" else "Suggest an order for Day ${state.selectedDay + 1}") },
                                 enabled = !state.suggesting && state.online && state.suggestion == null,
                                 onClick = { showMenu = false; vm.suggestOrder() },
                             )
@@ -501,7 +501,7 @@ private fun DayHoursDialog(label: String, start: String, end: String, onSave: (S
 }
 
 /**
- * Preview strip for a Gemini suggestion (design §8.7): the calendar below already shows the
+ * Preview strip for a Claude suggestion (design §8.7): the calendar below already shows the
  * proposed order; Apply writes it, Dismiss restores the stored order.
  *
  * Complexity:

@@ -102,7 +102,7 @@ data class TripDetailUiState(
     fun scheduleFor(day: Int): DaySchedule? = trip?.let { DaySchedules.compute(it, day, stopsByDay[day].orEmpty(), legs, dayHours[day]) }
 }
 
-/** Gemini's proposed order for one day (design §8.7), previewed until applied or dismissed. */
+/** Claude's proposed order for one day (design §8.7), previewed until applied or dismissed. */
 data class DaySuggestion(val day: Int, val orderedStopIds: List<String>, val rationale: String, val warnings: List<String>)
 
 class TripDetailViewModel(
@@ -336,7 +336,7 @@ class TripDetailViewModel(
     }
 
     /**
-     * "Suggest an order" for the selected day (design §8.7): the Function asks Gemini, validates and
+     * "Suggest an order" for the selected day (design §8.7): the Function asks Claude, validates and
      * scores the answer; the result is previewed on the calendar until applied or dismissed.
      *
      * Complexity:

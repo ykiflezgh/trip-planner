@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { buildPrompt, callGemini, lateness, suggestOrder, validateSuggestion, type SuggestDay, type SuggestLeg, type SuggestStop } from "./suggest";
+import { buildPrompt, callClaude, lateness, suggestOrder, validateSuggestion, type SuggestDay, type SuggestLeg, type SuggestStop } from "./suggest";
 
 const day: SuggestDay = { date: "2026-09-22", start: "09:00", end: "21:00", defaultMode: "driving" };
 const stops: SuggestStop[] = [
@@ -65,18 +65,26 @@ test("suggestOrder throws when both answers are structurally invalid", async () 
   await assert.rejects(suggestOrder(day, stops, legs, async () => ({ orderedStopIds: ["z"], rationale: "" })), /could not produce a valid order/);
 });
 
-test("callGemini posts a JSON schema and surfaces API errors", async () => {
-  let sent: { url: string; body: string; key: string } | null = null;
-  const ok = await callGemini("k", "hi", async (url, init) => {
-    sent = { url, body: init.body, key: init.headers["x-goog-api-key"] };
-    return { ok: true, status: 200, text: async () => JSON.stringify({ candidates: [{ content: { parts: [{ text: JSON.stringify({ orderedStopIds: ["a"], rationale: "r" }) }] } }] }) };
+test("callClaude forces the propose_order tool and surfaces API errors", async () => {
+  let sent: { url: string; body: string; key: string; version: string } | null = null;
+  const ok = await callClaude("k", "hi", async (url, init) => {
+    sent = { url, body: init.body, key: init.headers["x-api-key"], version: init.headers["anthropic-version"] };
+    return { ok: true, status: 200, text: async () => JSON.stringify({ content: [{ type: "text", text: "thinking" }, { type: "tool_use", name: "propose_order", input: { orderedStopIds: ["a"], rationale: "r" } }] }) };
   });
   assert.deepEqual(ok, { orderedStopIds: ["a"], rationale: "r" });
-  assert.match(sent!.url, /gemini-3\.6-flash:generateContent$/);
+  assert.equal(sent!.url, "https://api.anthropic.com/v1/messages");
   assert.equal(sent!.key, "k");
-  assert.match(sent!.body, /responseSchema/);
+  assert.equal(sent!.version, "2023-06-01");
+  const body = JSON.parse(sent!.body);
+  assert.equal(body.model, "claude-sonnet-5");
+  assert.deepEqual(body.tool_choice, { type: "tool", name: "propose_order" });
+  assert.equal(body.tools[0].input_schema.required.length, 2);
   await assert.rejects(
-    callGemini("k", "hi", async () => ({ ok: false, status: 400, text: async () => JSON.stringify({ error: { message: "API key not valid" } }) })),
-    /API key not valid/,
+    callClaude("k", "hi", async () => ({ ok: false, status: 401, text: async () => JSON.stringify({ type: "error", error: { type: "authentication_error", message: "invalid x-api-key" } }) })),
+    /invalid x-api-key/,
+  );
+  await assert.rejects(
+    callClaude("k", "hi", async () => ({ ok: true, status: 200, text: async () => JSON.stringify({ content: [{ type: "text", text: "no tool" }] }) })),
+    /no proposal/,
   );
 });

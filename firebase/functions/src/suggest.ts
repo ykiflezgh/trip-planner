@@ -1,5 +1,5 @@
 /**
- * "Suggest an order" (design v1.1 §8.7): Gemini proposes an order for one day's stops; the
+ * "Suggest an order" (design v1.1 §8.7): Claude proposes an order for one day's stops; the
  * Function validates it (real ids only, pinned entries kept, no new late arrivals per the
  * schedule engine) and retries once with feedback before returning the best candidate.
  * Pure helpers here; the Firestore reads and the callable live in index.ts.
@@ -15,15 +15,22 @@ export interface SuggestDay { date: string; start: string; end: string; defaultM
 export interface Suggestion { orderedStopIds: string[]; rationale: string }
 export interface Scored extends Suggestion { lateMinutes: number; warnings: string[] }
 
-export const GEMINI_MODEL = "gemini-3.6-flash";
-export const RESPONSE_SCHEMA = {
-  type: "OBJECT",
-  properties: {
-    orderedStopIds: { type: "ARRAY", items: { type: "STRING" } },
-    rationale: { type: "STRING" },
+export const CLAUDE_MODEL = "claude-sonnet-5";
+export const ANTHROPIC_VERSION = "2023-06-01";
+/** Forced tool call: Claude answers by "calling" this, which yields validated JSON (no free text to parse). */
+export const PROPOSE_TOOL = {
+  name: "propose_order",
+  description: "Propose the order in which the group should visit the day's stops.",
+  input_schema: {
+    type: "object",
+    properties: {
+      orderedStopIds: { type: "array", items: { type: "string" }, description: "Every stop id exactly once, in visiting order." },
+      rationale: { type: "string", description: "One sentence for the group explaining the order." },
+    },
+    required: ["orderedStopIds", "rationale"],
   },
-  required: ["orderedStopIds", "rationale"],
 };
+const SYSTEM = "You plan one day of a group trip. Keep pinned entries at their pinned times, use every stop id exactly once, minimise travel and idle gaps, and answer only by calling propose_order.";
 
 /**
  * Complexity:
@@ -49,7 +56,7 @@ export function buildPrompt(day: SuggestDay, stops: SuggestStop[], legs: Suggest
     travel.length ? "Known travel times between pairs (use them; unknown pairs are far apart):" : "No travel times known.",
     ...travel,
     ...(feedback ? [`Previous attempt was rejected: ${feedback}. Fix that.`] : []),
-    'Answer with JSON {"orderedStopIds": [...], "rationale": "<one sentence for the group>"}.',
+    "Call propose_order with the ordered ids and a one-sentence rationale for the group.",
   ].join("\n");
 }
 
@@ -100,34 +107,38 @@ export function lateness(day: SuggestDay, stops: SuggestStop[], legs: SuggestLeg
   };
 }
 
-export type GeminiFetch = (url: string, init: { method: string; headers: Record<string, string>; body: string }) => Promise<{ ok: boolean; status: number; text(): Promise<string> }>;
+export type HttpFetch = (url: string, init: { method: string; headers: Record<string, string>; body: string }) => Promise<{ ok: boolean; status: number; text(): Promise<string> }>;
 
 /**
- * One generateContent call with a JSON response schema; throws with Gemini's message on failure.
+ * One Messages API call with a forced tool choice; throws with the API's message on failure.
  *
  * Complexity:
  * - Time: O(1) round trip.
  * - Space: O(P) for the P-byte prompt.
  */
-export async function callGemini(apiKey: string, prompt: string, fetchImpl: GeminiFetch): Promise<Suggestion> {
-  const res = await fetchImpl(`https://generativelanguage.googleapis.com/v1beta/models/${GEMINI_MODEL}:generateContent`, {
+export async function callClaude(apiKey: string, prompt: string, fetchImpl: HttpFetch): Promise<Suggestion> {
+  const res = await fetchImpl("https://api.anthropic.com/v1/messages", {
     method: "POST",
-    headers: { "Content-Type": "application/json", "x-goog-api-key": apiKey },
+    headers: { "content-type": "application/json", "x-api-key": apiKey, "anthropic-version": ANTHROPIC_VERSION },
     body: JSON.stringify({
-      contents: [{ role: "user", parts: [{ text: prompt }] }],
-      generationConfig: { responseMimeType: "application/json", responseSchema: RESPONSE_SCHEMA, temperature: 0.4 },
+      model: CLAUDE_MODEL,
+      max_tokens: 1024,
+      system: SYSTEM,
+      messages: [{ role: "user", content: prompt }],
+      tools: [PROPOSE_TOOL],
+      tool_choice: { type: "tool", name: PROPOSE_TOOL.name },
     }),
   });
   const text = await res.text();
   if (!res.ok) {
-    let msg = `Gemini HTTP ${res.status}`;
+    let msg = `Claude HTTP ${res.status}`;
     try { msg = JSON.parse(text)?.error?.message ?? msg; } catch { /* keep default */ }
     throw new Error(msg);
   }
-  const body = JSON.parse(text);
-  const part = body?.candidates?.[0]?.content?.parts?.[0]?.text;
-  if (typeof part !== "string") throw new Error("Gemini returned no content");
-  return JSON.parse(part) as Suggestion;
+  const body = JSON.parse(text) as { content?: { type: string; name?: string; input?: unknown }[] };
+  const block = body.content?.find((b) => b.type === "tool_use" && b.name === PROPOSE_TOOL.name);
+  if (!block || typeof block.input !== "object" || block.input === null) throw new Error("Claude returned no proposal");
+  return block.input as Suggestion;
 }
 
 /**
@@ -152,6 +163,6 @@ export async function suggestOrder(day: SuggestDay, stops: SuggestStop[], legs: 
     if (scored.lateMinutes <= baseline) return scored;
     feedback = `it makes someone late for a pinned entry (${scored.warnings.join("; ")})`;
   }
-  if (!best) throw new Error(`Gemini could not produce a valid order (${feedback})`);
+  if (!best) throw new Error(`Claude could not produce a valid order (${feedback})`);
   return best;
 }

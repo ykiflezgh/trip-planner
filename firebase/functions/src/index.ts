@@ -1,6 +1,6 @@
 /**
  * Cloud Functions (2nd gen) — skeletons for design §8.
- * Secrets: ROUTES_API_KEY and GEMINI_API_KEY via Secret Manager
+ * Secrets: ROUTES_API_KEY and ANTHROPIC_API_KEY via Secret Manager
  * (`firebase functions:secrets:set ROUTES_API_KEY`), never in source.
  * App Check: set enforceAppCheck on every callable before launch (§11).
  */
@@ -17,7 +17,7 @@ import * as crypto from "node:crypto";
 import { needsDigest, planNotification, tokensToPrune, type BurstWindow, type EventFacts } from "./burst";
 import { buildMessage, type Notice } from "./notifications";
 import { buildFeed, etagOf, newToken, tokenHash, tripDates, type FeedDay, type FeedLeg, type FeedStop, type FeedTrip } from "./feed";
-import { callGemini, suggestOrder, type GeminiFetch, type SuggestDay, type SuggestLeg, type SuggestStop } from "./suggest";
+import { callClaude, suggestOrder, type HttpFetch, type SuggestDay, type SuggestLeg, type SuggestStop } from "./suggest";
 import { MODES, adjacentPairs, computeMatrix, legId, legsFromMatrix, planLegs, type LegDoc, type StopPoint } from "./travel";
 
 initializeApp();
@@ -26,7 +26,7 @@ const db = getFirestore();
 db.settings({ ignoreUndefinedProperties: true });
 
 const ROUTES_API_KEY = defineSecret("ROUTES_API_KEY");
-const GEMINI_API_KEY = defineSecret("GEMINI_API_KEY");
+const ANTHROPIC_API_KEY = defineSecret("ANTHROPIC_API_KEY");
 /** Kill switch for §8.7 (stands in for the Remote Config flag `suggest_order_enabled`). */
 const SUGGEST_ORDER_ENABLED = defineBoolean("SUGGEST_ORDER_ENABLED", { default: true });
 /**
@@ -423,14 +423,14 @@ export const flushNotifyDigest = onTaskDispatched<{ tripId: string; actorId: str
 );
 
 /**
- * §8.7 — Gemini proposes an order for one day; validated and scored by the schedule engine
+ * §8.7 — Claude proposes an order for one day; validated and scored by the schedule engine
  * (see suggest.ts). Editors only; the client previews the result and applies it as new order keys.
  *
  * Complexity:
  * - Time: O(S + L) per attempt (at most 2) over the day's S stops and L legs, plus the reads.
  * - Space: O(S + L).
  */
-export const suggestDayOrder = onCall({ secrets: [GEMINI_API_KEY], timeoutSeconds: 60 }, async (req) => {
+export const suggestDayOrder = onCall({ secrets: [ANTHROPIC_API_KEY], timeoutSeconds: 60 }, async (req) => {
   const uid = req.auth?.uid;
   const tripId = String(req.data?.tripId ?? "");
   const day = Number(req.data?.day);
@@ -439,7 +439,7 @@ export const suggestDayOrder = onCall({ secrets: [GEMINI_API_KEY], timeoutSecond
   const trip = await db.doc(`trips/${tripId}`).get();
   const role = trip.get("roles")?.[uid];
   if (!trip.exists || (role !== "owner" && role !== "editor")) throw new HttpsError("permission-denied", "Only editors can ask for suggestions");
-  const apiKey = GEMINI_API_KEY.value();
+  const apiKey = ANTHROPIC_API_KEY.value();
   if (!apiKey || apiKey.startsWith("placeholder")) throw new HttpsError("failed-precondition", "Suggestions are not configured on this server yet");
 
   const [stopsSnap, travelSnap, hoursDoc] = await Promise.all([
@@ -460,7 +460,7 @@ export const suggestDayOrder = onCall({ secrets: [GEMINI_API_KEY], timeoutSecond
     defaultMode: String(trip.get("defaultTravelMode") ?? "driving").toLowerCase(),
   };
   try {
-    const out = await suggestOrder(dayIn, stops, legs, (prompt) => callGemini(apiKey, prompt, fetch as unknown as GeminiFetch));
+    const out = await suggestOrder(dayIn, stops, legs, (prompt) => callClaude(apiKey, prompt, fetch as unknown as HttpFetch));
     logger.info("suggestDayOrder", { tripId, day, stops: stops.length, lateMinutes: out.lateMinutes });
     return { orderedStopIds: out.orderedStopIds, rationale: out.rationale, warnings: out.warnings };
   } catch (e) {
