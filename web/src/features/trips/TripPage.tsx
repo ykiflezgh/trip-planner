@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react'
 import { Link, useParams, useSearchParams } from 'react-router'
 import { parseSchedule, tripDetail } from '../../lib/kotlin/tripPlanner'
 import { useKotlinState } from '../../hooks/useKotlinState'
@@ -20,8 +20,14 @@ import { SuggestionBanner } from '../suggest/SuggestionBanner'
 import { MapPanel } from '../map/MapPanel'
 import { MapsProvider } from '../map/MapsProvider'
 import { MAPS_KEY } from '../../lib/maps'
+import { Menu, type MenuItem } from '../../components/Menu'
 
 type View = 'agenda' | 'day' | 'trip'
+
+// The two-pane breakpoint (Tailwind `lg`), tracked live: the map pane is mounted only while it is visible.
+const WIDE = '(min-width: 1024px)'
+const subscribeWide = (onChange: () => void) => { const q = window.matchMedia(WIDE); q.addEventListener('change', onChange); return () => q.removeEventListener('change', onChange) }
+const isWide = () => window.matchMedia(WIDE).matches
 
 /**
  * Open trip: one facade (one ViewModel, scoped listeners) for the route's lifetime; day and view
@@ -37,12 +43,16 @@ export function TripPage() {
   const view: View = params.get('view') === 'day' ? 'day' : params.get('view') === 'trip' ? 'trip' : 'agenda'
   const [announcement, announce] = useAnnouncer()
   const [editId, setEditId] = useState<string | null>(null)
-  const wide = typeof window !== 'undefined' && window.matchMedia('(min-width: 1024px)').matches
+  const wide = useSyncExternalStore(subscribeWide, isWide, () => false)
   const [pane, setPane] = useState<'calendar' | 'map'>('calendar')
   const [dialog, setDialog] = useState<'add' | 'hours' | 'settings' | null>(null)
-  const [menu, setMenu] = useState(false)
   const schedules = useMemo(() => (state?.schedules ?? []).map(parseSchedule), [state?.schedules])
   const hasMaps = Boolean(MAPS_KEY)
+  // Where focus returns when something the More menu opened goes away (WCAG 2.4.3): the More
+  // trigger, or the trip heading if the menu is not on the page.
+  const more = useRef<HTMLSpanElement>(null)
+  const heading = useRef<HTMLHeadingElement>(null)
+  const focusMore = () => (more.current?.querySelector<HTMLButtonElement>('button[aria-haspopup]') ?? heading.current)?.focus()
 
   // URL -> ViewModel (day) and toggle; the ViewModel is the source of truth for the selection.
   const urlDay = Number(params.get('day') ?? '0')
@@ -53,6 +63,9 @@ export function TripPage() {
   const urlStop = params.get('stop')
   useEffect(() => { if (urlStop) facade.selectStop(urlStop) }, [facade, urlStop])
   const showActivity = params.get('panel') === 'activity'
+  // The menu has closed by the time Claude is asked (design §8.7), so the wait is announced from here.
+  const suggesting = state?.suggesting ?? false
+  useEffect(() => { if (suggesting) announce('Asking Claude for an order…') }, [suggesting, announce])
 
   const set = (patch: Record<string, string | null>) => {
     const next = new URLSearchParams(params)
@@ -60,9 +73,9 @@ export function TripPage() {
     setParams(next, { replace: true })
   }
 
-  // One-shot messages from the ViewModel (validation, concurrent deletes) as a dismissible bar.
+  // One-shot messages from the ViewModel (validation, concurrent deletes) as a dismissible bar. It
+  // stays until dismissed (WCAG 2.2.1): no timer that slow readers or magnifier users could miss.
   const message = state?.message ?? null
-  useEffect(() => { if (!message) return; const t = setTimeout(() => facade.consumeMessage(), 6000); return () => clearTimeout(t) }, [facade, message])
 
   if (!state) return <p className="p-4">Opening trip…</p>
   if (state.error && !state.trip) return <p className="p-4 text-red-700">{state.error}</p>
@@ -84,40 +97,54 @@ export function TripPage() {
     announce,
   } : undefined
   const editStop = editId ? state.stopsByDay.flat().find((s) => s.id === editId) ?? null : null
+  // The map pane is hidden below `lg` unless chosen; an unmounted Map does not import the Maps
+  // library, while MapsProvider stays around the page for the Places search in AddStopDialog.
+  const mapVisible = wide || pane === 'map'
+
+  // The More menu (shared <Menu>: ARIA menu-button keyboard model, focus back on the trigger when it closes).
+  const menuItems = ([
+    { label: showActivity ? 'Hide activity' : 'Activity', onSelect: () => set({ panel: showActivity ? null : 'activity' }) },
+    { label: state.muted ? 'Unmute notifications' : 'Mute notifications', onSelect: () => facade.setMuted(!state.muted) },
+    editing && { label: 'Day hours…', onSelect: () => setDialog('hours') },
+    state.canEdit && state.suggestOrderEnabled && state.stops.length >= 2 && {
+      label: state.suggesting ? 'Asking Claude…' : `Suggest an order for Day ${state.selectedDay + 1}`,
+      disabled: state.suggesting || !state.online || !!state.suggestion,
+      onSelect: () => facade.suggestOrder(),
+    },
+    state.calendarFeedEnabled && { label: state.calendarBusy ? 'Preparing calendar link…' : 'Add to my calendar…', disabled: state.calendarBusy || !state.online, onSelect: () => facade.addToCalendar() },
+    state.calendarFeedEnabled && { label: 'Remove my calendar links', disabled: state.calendarBusy || !state.online, onSelect: () => facade.revokeCalendarLinks() },
+    state.isOwner && trip && { label: 'Settings…', onSelect: () => setDialog('settings') },
+  ] as (MenuItem | false | null)[]).filter((it): it is MenuItem => Boolean(it))
 
   return (
     <MapsProvider>
     <main className="mx-auto max-w-7xl p-4">
       <div className="mb-2 flex flex-wrap items-baseline gap-3">
         <Link to="/app" className="text-sm text-indigo-700">← Trips</Link>
-        <h1 className="text-xl font-semibold">{trip?.name ?? 'Trip'}</h1>
-        {!state.online && <span className="text-sm text-amber-700">offline · changes queue until you are back</span>}
-        {state.pendingSync && <span className="text-sm text-stone-500">syncing…</span>}
+        <h1 ref={heading} tabIndex={-1} className="text-xl font-semibold">{trip?.name ?? 'Trip'}</h1>
+        {/* Connection state in a region that is always mounted, so going offline or syncing is announced (WCAG 4.1.3). */}
+        <span role="status" className="flex flex-wrap gap-3 text-sm">
+          {!state.online && <span className="text-amber-700">offline · changes queue until you are back</span>}
+          {state.pendingSync && <span className="text-stone-600">syncing…</span>}
+        </span>
         <span className="ml-auto flex gap-2 text-sm">
           {state.isOwner && <button className="rounded border border-stone-300 px-3 py-1 disabled:opacity-50" disabled={state.sharing || !state.online} onClick={() => facade.share()}>{state.sharing ? 'Sharing…' : 'Share'}</button>}
           {editing && <button className="rounded bg-indigo-600 px-3 py-1 text-white" onClick={() => setDialog('add')}>Add stop</button>}
-          <span className="relative">
-            <button className="rounded border border-stone-300 px-3 py-1" aria-haspopup="menu" aria-expanded={menu} onClick={() => setMenu(!menu)}>More ▾</button>
-            {menu && (
-              <span role="menu" className="absolute right-0 z-20 mt-1 flex w-64 flex-col rounded border border-stone-200 bg-white py-1 text-left shadow-lg">
-                <button role="menuitem" className="px-3 py-1.5 text-left hover:bg-stone-50" onClick={() => { setMenu(false); set({ panel: showActivity ? null : 'activity' }) }}>{showActivity ? 'Hide activity' : 'Activity'}</button>
-                <button role="menuitem" className="px-3 py-1.5 text-left hover:bg-stone-50" onClick={() => { setMenu(false); facade.setMuted(!state.muted) }}>{state.muted ? 'Unmute notifications' : 'Mute notifications'}</button>
-                {editing && <button role="menuitem" className="px-3 py-1.5 text-left hover:bg-stone-50" onClick={() => { setMenu(false); setDialog('hours') }}>Day hours…</button>}
-                {state.canEdit && state.suggestOrderEnabled && state.stops.length >= 2 && (
-                  <button role="menuitem" className="px-3 py-1.5 text-left hover:bg-stone-50 disabled:opacity-50" disabled={state.suggesting || !state.online || !!state.suggestion} onClick={() => { setMenu(false); facade.suggestOrder() }}>
-                    {state.suggesting ? 'Asking Claude…' : `Suggest an order for Day ${state.selectedDay + 1}`}
-                  </button>
-                )}
-                {state.calendarFeedEnabled && <button role="menuitem" className="px-3 py-1.5 text-left hover:bg-stone-50 disabled:opacity-50" disabled={state.calendarBusy || !state.online} onClick={() => { setMenu(false); facade.addToCalendar() }}>{state.calendarBusy ? 'Preparing calendar link…' : 'Add to my calendar…'}</button>}
-                {state.calendarFeedEnabled && <button role="menuitem" className="px-3 py-1.5 text-left hover:bg-stone-50 disabled:opacity-50" disabled={state.calendarBusy || !state.online} onClick={() => { setMenu(false); facade.revokeCalendarLinks() }}>Remove my calendar links</button>}
-                {state.isOwner && trip && <button role="menuitem" className="px-3 py-1.5 text-left hover:bg-stone-50" onClick={() => { setMenu(false); setDialog('settings') }}>Settings…</button>}
-              </span>
-            )}
+          <span ref={more}>
+            <Menu label={<>More <span aria-hidden="true">▾</span></>} items={menuItems} triggerClassName="rounded border border-stone-300 px-3 py-1" />
           </span>
         </span>
       </div>
-      {state.suggestion && <SuggestionBanner suggestion={state.suggestion} onApply={() => facade.applySuggestion()} onDismiss={() => facade.dismissSuggestion()} />}
-      {message && <p className="mb-2 rounded bg-amber-50 px-3 py-2 text-sm text-amber-800">{message} <button className="underline" onClick={() => facade.consumeMessage()}>dismiss</button></p>}
+      {/* Always mounted so the banner's arrival is announced; the banner itself takes focus (it waits for a decision). */}
+      <div aria-live="polite">
+        {state.suggestion && (
+          <SuggestionBanner suggestion={state.suggestion} onApply={() => { facade.applySuggestion(); focusMore() }}
+            onDismiss={() => { facade.dismissSuggestion(); announce('Suggestion dismissed'); focusMore() }} />
+        )}
+      </div>
+      <div role="status" aria-live="polite">
+        {message && <p className="mb-2 rounded bg-amber-50 px-3 py-2 text-sm text-amber-800">{message} <button type="button" className="underline" onClick={() => { facade.consumeMessage(); focusMore() }}>dismiss</button></p>}
+      </div>
       <nav className="mb-2 flex gap-1 overflow-x-auto border-b border-stone-200" aria-label="Days">
         {days.map((d) => (
           <button key={d} onClick={() => set({ day: String(d) })} aria-current={d === state.selectedDay ? 'page' : undefined}
@@ -135,7 +162,7 @@ export function TripPage() {
             {state.localTime ? `Local time · ${state.zoneLabel}` : `Trip time · ${state.zoneLabel}`}
           </Chip>
         )}
-        {schedule && <span className="text-stone-500">{schedule.hoursStart.slice(11, 16)} – {schedule.hoursEnd.slice(11, 16)}</span>}
+        {schedule && <span className="text-stone-600">{schedule.hoursStart.slice(11, 16)} – {schedule.hoursEnd.slice(11, 16)}</span>}
         <span className="ml-auto flex gap-1 lg:hidden">
           <Chip active={pane === 'calendar'} onClick={() => setPane('calendar')}>Calendar</Chip>
           <Chip active={pane === 'map'} onClick={() => setPane('map')}>Map</Chip>
@@ -158,12 +185,12 @@ export function TripPage() {
         </section>
         <aside className={`${pane === 'calendar' ? 'hidden lg:block' : ''} min-h-[320px]`}>
           {showActivity
-            ? <ActivityPanel tripId={tripId} onClose={() => set({ panel: null })} onOpenStop={(day, id) => { set({ day: String(day), panel: 'activity' }); facade.selectStop(id) }} />
-            : <MapPanel stops={state.stops} selectedId={state.selectedStopId} onSelect={(id) => facade.selectStop(id)} />}
+            ? <ActivityPanel tripId={tripId} onClose={() => { set({ panel: null }); focusMore() }} onOpenStop={(day, id) => { set({ day: String(day), panel: 'activity' }); facade.selectStop(id) }} />
+            : mapVisible && <MapPanel stops={state.stops} selectedId={state.selectedStopId} onSelect={(id) => facade.selectStop(id)} />}
         </aside>
       </div>
       <p aria-live="polite" className="sr-only">{announcement}</p>
-      {view === 'trip' && !wide && state.canEdit && <p className="mt-2 text-xs text-stone-500">Trip view is read-only at this width; widen the window to drag across days.</p>}
+      {view === 'trip' && !wide && state.canEdit && <p className="mt-2 text-xs text-stone-600">Trip view is read-only at this width; widen the window to drag across days.</p>}
       {editStop && (
         <EntryDialog stop={editStop} entry={schedules[editStop.day]?.entries.find((e) => e.id === editStop.id)}
           onPin={(t) => gridEdit?.pin(editStop.id, editStop.day, t)} onResize={(m) => facade.resizeEntry(editStop.id, m)} onUnpin={() => facade.unpinEntry(editStop.id)} onClose={() => setEditId(null)} />
