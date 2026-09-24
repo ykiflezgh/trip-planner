@@ -7,6 +7,7 @@ import app.tripplanner.schedule.Schedule
 import app.tripplanner.shared.core.model.DayHoursDoc
 import app.tripplanner.shared.core.model.Stop
 import app.tripplanner.shared.feature.calendar.DaySchedules
+import app.tripplanner.shared.feature.calendar.TimeDisplay
 import app.tripplanner.shared.feature.reminders.SyncReminders
 import app.tripplanner.shared.core.model.TravelLeg
 import app.tripplanner.shared.core.model.TravelMode
@@ -32,6 +33,7 @@ import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
+import kotlinx.datetime.LocalDate
 import kotlinx.coroutines.withTimeoutOrNull
 
 data class TripDetailUiState(
@@ -237,6 +239,58 @@ class TripDetailViewModel(
      */
     fun moveStop(stopId: String, day: Int, afterOrder: String?, beforeOrder: String?) {
         repo.moveStop(tripId, stopId, day, afterOrder, beforeOrder, updatedBy = auth.currentUser?.uid.orEmpty())
+    }
+
+    /**
+     * Owner edits the trip settings (design §3.1 item 2). Validates before the single write;
+     * problems surface as the one-shot message.
+     *
+     * Complexity:
+     * - **Time:** O(1).
+     * - **Space:** O(1).
+     */
+    fun updateSettings(name: String, startDate: String, endDate: String, timeZone: String, defaultDayStart: String, defaultDayEnd: String, defaultTravelMode: String) {
+        if (!state.value.isOwner) { message.value = "Only the owner can change trip settings"; return }
+        val title = name.trim()
+        if (title.isBlank()) { message.value = "Give the trip a name"; return }
+        val dates = runCatching { LocalDate.parse(startDate) to LocalDate.parse(endDate) }.getOrNull() ?: run { message.value = "Dates must be YYYY-MM-DD"; return }
+        if (dates.second < dates.first) { message.value = "The trip must end on or after it starts"; return }
+        if (TimeDisplay.zone(timeZone) == null) { message.value = "Unknown time zone: $timeZone"; return }
+        val s = Schedule.parseTime(defaultDayStart); val e = Schedule.parseTime(defaultDayEnd)
+        if (s == null || e == null || e <= s) { message.value = "Day hours must be HH:mm and end after they start"; return }
+        val mode = defaultTravelMode.lowercase().takeIf { it == "driving" || it == "walking" } ?: run { message.value = "Travel mode must be driving or walking"; return }
+        repo.updateTripSettings(tripId, title, startDate, endDate, timeZone, defaultDayStart, defaultDayEnd, mode)
+    }
+
+    /**
+     * Adds a place stop already resolved by the platform's Places client (the web uses the JS
+     * Places library, companion §8.3); mirrors `AddStopViewModel.add` without the Ktor call.
+     *
+     * Complexity:
+     * - **Time:** O(L) for the fractional key of length L + one write.
+     * - **Space:** O(1).
+     */
+    fun addPlaceStop(placeId: String, name: String, address: String, lat: Double, lng: Double, durationMin: Int, notes: String, day: Int, afterOrder: String?, beforeOrder: String?): String? {
+        val uid = auth.currentUser?.uid ?: run { message.value = "Sign in first"; return null }
+        if (placeId.isBlank() || name.isBlank()) return null
+        val stop = Stop(placeId = placeId, name = name.trim(), address = address, lat = lat, lng = lng, day = day, durationMin = durationMin.coerceIn(Schedule.MIN_DURATION_MIN, Schedule.MAX_DURATION_MIN), notes = notes.trim(), addedBy = uid, updatedBy = uid)
+        return repo.addStop(tripId, stop, afterOrder = afterOrder, beforeOrder = beforeOrder)
+    }
+
+    /**
+     * Adds a custom entry (no place, design v1.1 §7); same rules as `AddStopViewModel.addCustom`.
+     *
+     * Complexity:
+     * - **Time:** O(L) + one write.
+     * - **Space:** O(1).
+     */
+    fun addCustomEntry(name: String, durationMin: Int, fixedStart: String?, notes: String, day: Int, afterOrder: String?, beforeOrder: String?): String? {
+        val uid = auth.currentUser?.uid ?: run { message.value = "Sign in first"; return null }
+        val title = name.trim().take(80)
+        if (title.isBlank()) return null
+        val pin = fixedStart?.takeIf { it.isNotBlank() }?.also { if (Schedule.parseTime(it) == null) { message.value = "Pinned time must be HH:mm"; return null } }
+        val stop = Stop(kind = Stop.KIND_CUSTOM, name = title, day = day, durationMin = durationMin.coerceIn(Schedule.MIN_DURATION_MIN, Schedule.MAX_DURATION_MIN), fixedStart = pin, notes = notes.trim(), addedBy = uid, updatedBy = uid)
+        return repo.addStop(tripId, stop, afterOrder = afterOrder, beforeOrder = beforeOrder)
     }
 
     /**

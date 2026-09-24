@@ -214,6 +214,26 @@ bit during the first deploy). Vitest covers the time helpers and the Day-view la
 (`npm test` in `web/`). Facades must be created after `start()`, never at module import time
 (React Router evaluates route modules first). Not in W1: editing, Trip view, activity, push, feed dialog, suggestions.
 
+**Web W2 — editing** (branch `web-w2`, companion 0.2 §17): "Add stop" (Places autocomplete through the JS
+Places library with one `AutocompleteSessionToken` per search, `Place.fetchFields` ending the session,
+or a custom entry with an optional pinned time), Agenda reorder by drag (dnd-kit pointer sensor) and by
+keyboard (grab handle: Space, arrows, Space) plus an actions menu (Move up / down / to Day N / Delete)
+so every change has a non-drag path, a Day-hours dialog (prefilled from the raw trip-time hours, not
+the zone-shifted schedule) and an owner-only Trip settings dialog (name, dates, zone with an
+`Intl.supportedValuesOf` datalist, default hours and travel mode). Kotlin: `TripRepository.updateTripSettings`
+and `TripDetailViewModel.updateSettings` (validated; problems surface as the one-shot message), plus
+`addPlaceStop` / `addCustomEntry` on the ViewModel for clients that resolve places themselves; the
+facade exposes them with move / moveToDay / delete / setDayHours / pin / unpin / resize. Reminders:
+`ReminderScheduler.supported` (false on the web) makes `SyncReminders` skip entirely, so the browser no
+longer listens to every trip's stops for a scheduler that cannot fire. One Maps loader
+(`MapsProvider`, with the `places` library) sits above the trip page so the map pane and the search
+share it; `useMapsLibrary` silently returns null outside a provider, which is how the first search
+came back empty. Verified on the dev site: place stop added on Day 3 from a real suggestion, custom
+entry pinned at 12:00, day hours 10:00–20:00 moving the first stop, Move down reordering, Delete,
+and an invalid zone rejected by the settings dialog with the message bar. Vitest: 8 tests
+(neighbour keys for reorders added). Not in W2: Day-view drag-to-pin and resize, cross-day drag
+(W3), collaboration features (W4).
+
 Still unverified: the Places call shapes in `shared/data/`. Cloud Functions in `firebase/functions/` have no open TODOs.
 
 ## Layout

@@ -12,7 +12,7 @@ export interface TripListState {
 export interface Stop { id: string; name: string; kind: string; day: number; order: string; durationMin: number; fixedStart: string | null; address: string; lat: number | null; lng: number | null; notes: string }
 export interface Leg { from: string; to: string; mode: 'drive' | 'walk'; seconds: number | null; meters: number | null; error: string | null }
 export interface TripDetailState {
-  loading: boolean; error: string | null; online: boolean; selectedDay: number; selectedStopId: string | null; dayCount: number
+  loading: boolean; error: string | null; message: string | null; dayHoursStart: string | null; dayHoursEnd: string | null; online: boolean; selectedDay: number; selectedStopId: string | null; dayCount: number
   canEdit: boolean; isOwner: boolean; pendingSync: boolean; trip: Trip | null; stops: Stop[]; legs: Leg[]; scheduleJson: string | null
   tripZone: string | null; deviceZone: string; zoneDiffers: boolean; localTime: boolean; zoneLabel: string
 }
@@ -24,19 +24,33 @@ export interface DaySchedule {
 
 export interface Subscribable<S> { subscribe(onState: (s: S) => void): () => void }
 export interface TripListFacade extends Subscribable<TripListState> { signIn(): void; signOut(): void; dismissError(): void }
-export interface TripDetailFacade extends Subscribable<TripDetailState> { selectDay(day: number): void; selectStop(stopId: string | null): void; setLocalTime(enabled: boolean): void; close(): void }
+export interface TripDetailFacade extends Subscribable<TripDetailState> {
+  selectDay(day: number): void; selectStop(stopId: string | null): void; setLocalTime(enabled: boolean): void; close(): void
+  addPlaceStop(placeId: string, name: string, address: string, lat: number, lng: number, durationMin: number, notes: string, day: number, afterOrder: string | null, beforeOrder: string | null): string | null
+  addCustomEntry(name: string, durationMin: number, fixedStart: string | null, notes: string, day: number, afterOrder: string | null, beforeOrder: string | null): string | null
+  moveStop(stopId: string, day: number, afterOrder: string | null, beforeOrder: string | null): void
+  moveToDay(stopId: string, day: number): void
+  deleteStop(stopId: string): void
+  setDayHours(day: number, start: string, end: string): void
+  pinEntry(stopId: string, hhmm: string, order: string | null): void
+  unpinEntry(stopId: string): void
+  resizeEntry(stopId: string, durationMin: number): void
+  updateSettings(name: string, startDate: string, endDate: string, timeZone: string, defaultDayStart: string, defaultDayEnd: string, defaultTravelMode: string): void
+  consumeMessage(): void
+}
 
 // Kotlin `object` -> a singleton behind getInstance() in the ES-module output.
 const Web = TripPlannerWeb.getInstance()
 
 export interface FirebaseWebConfig { appId: string; apiKey: string; projectId: string; authDomain: string; messagingSenderId: string }
 
-export function start(config: FirebaseWebConfig, placesApiKey = '', appLinkHost = ''): void {
-  Web.start(config.appId, config.apiKey, config.projectId, config.authDomain, config.messagingSenderId, placesApiKey, appLinkHost)
+export function start(config: FirebaseWebConfig, appLinkHost = ''): void {
+  Web.start(config.appId, config.apiKey, config.projectId, config.authDomain, config.messagingSenderId, appLinkHost)
 }
 export const resumeRedirect = (): Promise<boolean> => Web.resumeRedirect()
-export const tripList = (): TripListFacade => Web.tripList()
-export const tripDetail = (tripId: string): TripDetailFacade => Web.tripDetail(tripId)
+// Casts: the generated typings say Nullable<T> (undefined included) where the facade guarantees null.
+export const tripList = (): TripListFacade => Web.tripList() as unknown as TripListFacade
+export const tripDetail = (tripId: string): TripDetailFacade => Web.tripDetail(tripId) as unknown as TripDetailFacade
 export const computeDay = (dateIso: string, dayStart: string, dayEnd: string, entries: unknown[], travel: unknown[], defaultMode = 'driving'): DaySchedule =>
   JSON.parse(Web.computeDay(dateIso, dayStart, dayEnd, JSON.stringify(entries), JSON.stringify(travel), defaultMode))
 export const parseSchedule = (json: string | null): DaySchedule | null => (json ? (JSON.parse(json) as DaySchedule) : null)

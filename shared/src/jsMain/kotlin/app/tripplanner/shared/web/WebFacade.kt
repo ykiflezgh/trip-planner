@@ -51,12 +51,13 @@ object TripPlannerWeb {
      * - **Time:** O(D) Koin definitions.
      * - **Space:** O(D).
      */
-    fun start(applicationId: String, apiKey: String, projectId: String, authDomain: String, gcmSenderId: String, placesApiKey: String, appLinkHost: String) {
+    fun start(applicationId: String, apiKey: String, projectId: String, authDomain: String, gcmSenderId: String, appLinkHost: String) {
         Firebase.initialize(
             options = FirebaseOptions(applicationId = applicationId, apiKey = apiKey, projectId = projectId, authDomain = authDomain, gcmSenderId = gcmSenderId),
         )
         val config = if (appLinkHost.isBlank()) AppConfig() else AppConfig(appLinkHost = appLinkHost)
-        startKoin { modules(sharedModule(placesApiKey, config), jsModule()) }
+        // No Places key: the web resolves places through the JS Places library (companion §8.3), never the Ktor client.
+        startKoin { modules(sharedModule(placesApiKey = "", config = config), jsModule()) }
     }
 
     /**
@@ -134,6 +135,22 @@ class TripDetailFacade internal constructor(private val vm: TripDetailViewModel,
     fun selectStop(stopId: String?) = vm.selectStop(stopId)
     /** Show times in the browser's zone instead of the trip's; display only, nothing stored. */
     fun setLocalTime(enabled: Boolean) { localTime.value = enabled }
+
+    // Editing (W2, companion §6.2 use cases). Every call is one optimistic Firestore write.
+    fun addPlaceStop(placeId: String, name: String, address: String, lat: Double, lng: Double, durationMin: Int, notes: String, day: Int, afterOrder: String?, beforeOrder: String?): String? =
+        vm.addPlaceStop(placeId, name, address, lat, lng, durationMin, notes, day, afterOrder, beforeOrder)
+    fun addCustomEntry(name: String, durationMin: Int, fixedStart: String?, notes: String, day: Int, afterOrder: String?, beforeOrder: String?): String? =
+        vm.addCustomEntry(name, durationMin, fixedStart, notes, day, afterOrder, beforeOrder)
+    fun moveStop(stopId: String, day: Int, afterOrder: String?, beforeOrder: String?) = vm.moveStop(stopId, day, afterOrder, beforeOrder)
+    fun moveToDay(stopId: String, day: Int) = vm.moveToDay(stopId, day)
+    fun deleteStop(stopId: String) = vm.deleteStop(stopId)
+    fun setDayHours(day: Int, start: String, end: String) = vm.setDayHours(day, start, end)
+    fun pinEntry(stopId: String, hhmm: String, order: String?) = vm.pinEntry(stopId, hhmm, order)
+    fun unpinEntry(stopId: String) = vm.unpinEntry(stopId)
+    fun resizeEntry(stopId: String, durationMin: Int) = vm.resizeEntry(stopId, durationMin)
+    fun updateSettings(name: String, startDate: String, endDate: String, timeZone: String, defaultDayStart: String, defaultDayEnd: String, defaultTravelMode: String) =
+        vm.updateSettings(name, startDate, endDate, timeZone, defaultDayStart, defaultDayEnd, defaultTravelMode)
+    fun consumeMessage() = vm.consumeMessage()
     /**
      * Releases the ViewModel (Firestore listeners detach once the last subscriber is gone).
      *
@@ -169,7 +186,10 @@ private fun TripListUiState.toJs(): dynamic {
 
 private fun TripDetailUiState.toJs(local: Boolean): dynamic {
     val o = obj()
-    o.loading = loading; o.error = error; o.online = online; o.selectedDay = selectedDay; o.selectedStopId = selectedStopId
+    o.loading = loading; o.error = error; o.message = message; o.online = online; o.selectedDay = selectedDay; o.selectedStopId = selectedStopId
+    // Raw day hours in trip time for the Day-hours dialog (never the zone-shifted schedule, cf. the Android fix in PR #6).
+    o.dayHoursStart = dayHours[selectedDay]?.start ?: trip?.defaultDayStart
+    o.dayHoursEnd = dayHours[selectedDay]?.end ?: trip?.defaultDayEnd
     o.dayCount = dayCount; o.canEdit = canEdit; o.isOwner = isOwner; o.pendingSync = pendingSync
     o.trip = trip?.toJs()
     val dayStops = stopsForSelectedDay

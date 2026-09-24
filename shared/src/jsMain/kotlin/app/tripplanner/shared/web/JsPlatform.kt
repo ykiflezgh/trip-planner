@@ -116,5 +116,6 @@ class JsPushTokenProvider : PushTokenProvider {
 
 /** Browsers cannot schedule background notifications (companion §10): reminders are a no-op on the web. */
 class JsReminderScheduler : ReminderScheduler {
+    override val supported: Boolean get() = false
     override fun replace(reminders: List<Reminder>) = Unit
 }

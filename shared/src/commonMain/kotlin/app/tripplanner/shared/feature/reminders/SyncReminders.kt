@@ -45,6 +45,7 @@ class SyncReminders(
      */
     @OptIn(FlowPreview::class, ExperimentalCoroutinesApi::class)
     fun start() {
+        if (!scheduler.supported) { log.i { "reminders unsupported here; sync disabled" }; return }
         // Preference changes and sign-in/out.
         scope.launch {
             auth.user.flatMapLatest { u -> if (u == null) flowOf(null) else users.prefs(u.uid) }
