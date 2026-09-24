@@ -22,7 +22,7 @@ export function TripSettingsDialog({ trip, onSave, onClose }: { trip: Trip; onSa
           <label className="block flex-1 text-sm">Day ends<input className={field} type="time" value={t.defaultDayEnd} onChange={set('defaultDayEnd')} /></label>
         </div>
         <label className="block text-sm">Default travel<select className={field} value={t.defaultTravelMode} onChange={set('defaultTravelMode')}><option value="driving">Driving</option><option value="walking">Walking</option></select></label>
-        <p className="text-xs text-stone-500">Changing the zone keeps pinned times as wall-clock times (design §7).</p>
+        <p className="text-xs text-stone-600">Changing the zone keeps pinned times as wall-clock times (design §7).</p>
         <div className="flex gap-2"><button className={primary}>Save</button><button type="button" className={secondary} onClick={onClose}>Cancel</button></div>
       </form>
     </Modal>

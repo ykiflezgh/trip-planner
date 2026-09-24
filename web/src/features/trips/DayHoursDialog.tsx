@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useId, useState } from 'react'
 import { Modal, field, primary, secondary } from '../../components/Modal'
 
 const valid = (t: string) => /^([01]\d|2[0-3]):[0-5]\d$/.test(t)
@@ -7,15 +7,28 @@ const valid = (t: string) => /^([01]\d|2[0-3]):[0-5]\d$/.test(t)
 export function DayHoursDialog({ label, start, end, onSave, onClose }: { label: string; start: string; end: string; onSave: (s: string, e: string) => void; onClose: () => void }) {
   const [s, setS] = useState(start)
   const [e, setE] = useState(end)
+  const id = useId()
   return (
     <Modal title={`Day hours · ${label}`} onClose={onClose}>
+      {/* Save stays enabled so the browser's required-field check can point at the empty field on submit. */}
       <form className="space-y-3" onSubmit={(ev) => { ev.preventDefault(); if (valid(s) && valid(e)) onSave(s, e) }}>
         <div className="flex gap-3">
-          <label className="block flex-1 text-sm">Start<input className={field} type="time" value={s} onChange={(x) => setS(x.target.value)} /></label>
-          <label className="block flex-1 text-sm">End<input className={field} type="time" value={e} onChange={(x) => setE(x.target.value)} /></label>
+          <TimeField id={`${id}-start`} label="Start" value={s} onChange={setS} error="Enter a start time." />
+          <TimeField id={`${id}-end`} label="End" value={e} onChange={setE} error="Enter an end time." />
         </div>
-        <div className="flex gap-2"><button className={primary} disabled={!valid(s) || !valid(e)}>Save</button><button type="button" className={secondary} onClick={onClose}>Cancel</button></div>
+        <div className="flex gap-2"><button className={primary}>Save</button><button type="button" className={secondary} onClick={onClose}>Cancel</button></div>
       </form>
     </Modal>
+  )
+}
+
+/** A required time. Clearing it shows an inline error tied to the field and announced (WCAG 3.3.1, 4.1.3). */
+function TimeField({ id, label, value, onChange, error }: { id: string; label: string; value: string; onChange: (v: string) => void; error: string }) {
+  const bad = !valid(value)
+  return (
+    <div className="flex-1">
+      <label className="block text-sm">{label}<input id={id} className={field} type="time" value={value} onChange={(x) => onChange(x.target.value)} required aria-invalid={bad || undefined} aria-describedby={`${id}-error`} /></label>
+      <p id={`${id}-error`} role="alert" className={bad ? 'mt-1 text-sm text-red-700' : 'sr-only'}>{bad ? error : ''}</p>
+    </div>
   )
 }
