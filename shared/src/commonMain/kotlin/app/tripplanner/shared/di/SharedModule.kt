@@ -41,6 +41,8 @@ data class AppConfig(
     val appLinkHost: String = "tripplanner-dev-fe0a4.web.app",
     /** Kill switch for "Add to my calendar" (design §8.6 rollout note); flip to false to hide the menu item. */
     val calendarFeedEnabled: Boolean = true,
+    /** Kill switch for "Suggest an order" (design §8.7, Remote Config `suggest_order_enabled` later). */
+    val suggestOrderEnabled: Boolean = true,
 )
 
 fun sharedModule(placesApiKey: String, config: AppConfig = AppConfig()) = module {

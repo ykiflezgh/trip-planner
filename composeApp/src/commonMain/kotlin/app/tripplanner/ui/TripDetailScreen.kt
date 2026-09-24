@@ -85,6 +85,7 @@ import app.tripplanner.shared.core.model.Trip
 import app.tripplanner.shared.feature.trips.TravelText
 import app.tripplanner.shared.feature.stops.StopReorder
 import app.tripplanner.shared.feature.trips.TripDays
+import app.tripplanner.shared.feature.trips.DaySuggestion
 import app.tripplanner.shared.feature.trips.TripDetailViewModel
 import app.tripplanner.shared.platform.ShareSheet
 import kotlinx.coroutines.flow.first
@@ -125,6 +126,8 @@ fun TripDetailScreen(tripId: String, name: String, focusStopId: String? = null, 
     val canToggleZone = tripZone != null && state.trip != null &&
         TimeDisplay.differs(tripZone, deviceZone, LocalDateTime(TripDays.date(state.trip!!, state.selectedDay) ?: LocalDate(2000, 1, 1), LocalTime(12, 0)))
     val zoned = showLocal && canToggleZone
+    // A previewed suggestion (design §8.7) freezes reordering until it is applied or dismissed.
+    val editing = state.canEdit && state.suggestion == null
     val display: (DaySchedule?) -> DaySchedule? = { sch -> if (zoned && sch != null) TimeDisplay.shift(sch, tripZone!!, deviceZone) else sch }
     // A time picked on a zone-shifted grid, back in trip wall-clock terms (the trip date is the anchor).
     val toTripTime: (day: Int, LocalTime) -> LocalTime = { day, t ->
@@ -192,6 +195,13 @@ fun TripDetailScreen(tripId: String, name: String, focusStopId: String? = null, 
                         if (state.canEdit) {
                             DropdownMenuItem(text = { Text("Day hours\u2026") }, onClick = { showMenu = false; showDayHours = true })
                         }
+                        if (state.canEdit && state.suggestOrderEnabled && state.stopsForSelectedDay.size >= 2) {
+                            DropdownMenuItem(
+                                text = { Text(if (state.suggesting) "Asking Claude\u2026" else "Suggest an order for Day ${state.selectedDay + 1}") },
+                                enabled = !state.suggesting && state.online && state.suggestion == null,
+                                onClick = { showMenu = false; vm.suggestOrder() },
+                            )
+                        }
                         if (state.calendarFeedEnabled) {
                             DropdownMenuItem(
                                 text = { Text(if (state.calendarBusy) "Preparing calendar link\u2026" else "Add to my calendar\u2026") },
@@ -256,13 +266,14 @@ fun TripDetailScreen(tripId: String, name: String, focusStopId: String? = null, 
                     )
                 }
             }
+            state.suggestion?.let { sg -> SuggestionBanner(sg, onApply = vm::applySuggestion, onDismiss = vm::dismissSuggestion) }
             if (view == CalendarView.TRIP && state.trip != null) {
                 TripView(
                     schedules = (0 until state.dayCount).map { it to display(state.scheduleFor(it)) },
                     dayLabel = { day -> dayLabel(state.trip, day) },
                     selectedDay = state.selectedDay,
                     selectedId = state.selectedStopId,
-                    canEdit = state.canEdit,
+                    canEdit = editing,
                     onSelectDay = vm::selectDay,
                     onSelect = { day, id -> vm.selectDay(day); vm.selectStop(id) },
                     onPin = { day, id, start ->
@@ -276,7 +287,7 @@ fun TripDetailScreen(tripId: String, name: String, focusStopId: String? = null, 
                 DayView(
                     schedule = schedule,
                     selectedId = state.selectedStopId,
-                    canEdit = state.canEdit,
+                    canEdit = editing,
                     onSelect = vm::selectStop,
                     onPin = { id, start -> vm.pinEntry(id, Schedule.formatTime(toTripTime(state.selectedDay, start)), chronologicalOrder(schedule, dayStops, id, start)) },
                     onResize = vm::resizeEntry,
@@ -389,7 +400,7 @@ fun TripDetailScreen(tripId: String, name: String, focusStopId: String? = null, 
                 dayCount = state.dayCount,
                 timed = timed[stop.id],
                 zoneHint = if (zoned) TimeDisplay.label(tripZone!!.id) else null,
-                canEdit = state.canEdit,
+                canEdit = editing,
                 onPin = { hhmm -> vm.pinEntry(stop.id, hhmm, null) },
                 onUnpin = { vm.unpinEntry(stop.id) },
                 onMoveToDay = { day -> vm.moveToDay(stop.id, day); vm.selectDay(day) },
@@ -487,6 +498,29 @@ private fun DayHoursDialog(label: String, start: String, end: String, onSave: (S
         confirmButton = { Button(onClick = { onSave(s, e) }, enabled = valid) { Text("Save") } },
         dismissButton = { TextButton(onClick = onDismiss) { Text("Cancel") } },
     )
+}
+
+/**
+ * Preview strip for a Claude suggestion (design §8.7): the calendar below already shows the
+ * proposed order; Apply writes it, Dismiss restores the stored order.
+ *
+ * Complexity:
+ * - **Recomposition Time:** O(W) for W warnings.
+ * - **Composition Memory:** O(W).
+ */
+@Composable
+private fun SuggestionBanner(sg: DaySuggestion, onApply: () -> Unit, onDismiss: () -> Unit) {
+    Surface(tonalElevation = 3.dp, modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 4.dp)) {
+        Column(Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+            Text("Suggested order for Day ${sg.day + 1} \u00b7 preview", style = MaterialTheme.typography.titleSmall)
+            if (sg.rationale.isNotBlank()) Text(sg.rationale, style = MaterialTheme.typography.bodySmall)
+            sg.warnings.forEach { Text(it, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.error) }
+            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
+                TextButton(onClick = onDismiss) { Text("Dismiss") }
+                Button(onClick = onApply) { Text("Apply") }
+            }
+        }
+    }
 }
 
 /**

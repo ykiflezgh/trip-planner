@@ -67,7 +67,7 @@
       "labels": ["phase-3", "calendar"]
     },
     {
-      "title": "Phase 3: Gemini day-order suggestions behind a flag",
+      "title": "Phase 3: Claude day-order suggestions behind a flag",
       "body": "## Context\nDesign §8.5 — suggestDayOrder Function is skeletoned; Remote Config flag suggest_order_enabled.\n\n## Task\nWire the Gemini call with responseSchema, permutation validation, preview UI with apply-as-batch.\n\n## Acceptance criteria\n- [ ] Invalid/hallucinated IDs are rejected server-side\n- [ ] Flag off = no UI entry point",
       "labels": ["phase-3", "ai"]
     },

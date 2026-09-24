@@ -43,6 +43,8 @@ interface TripRepository {
     /** [updatedBy] is the acting uid, the Function's fallback actor when the write's auth context is missing (design §10). */
     fun moveStop(tripId: String, stopId: String, day: Int, afterOrder: String?, beforeOrder: String?, updatedBy: String)
     fun deleteStop(tripId: String, stopId: String)
+    /** Applies a suggested order (design §8.7): fresh evenly spread `order` keys for [orderedStopIds] in one batch. */
+    fun reorderDay(tripId: String, day: Int, orderedStopIds: List<String>, updatedBy: String)
     /** Per-day hour overrides (design v1.1 §7, §8.4). */
     fun days(tripId: String): Flow<List<DayHoursDoc>>
     /** Pins (`"HH:mm"`) or unpins (`null`) an entry's start and, when given, moves it to [order] in one write (design §8.4 step 2). */
@@ -198,6 +200,26 @@ class FirestoreTripRepository(
         write("move stop") {
             db.collection("trips").document(tripId).collection("stops").document(stopId)
                 .update("day" to day, "order" to order, "updatedBy" to updatedBy, "updatedAt" to Timestamp.ServerTimestamp)
+        }
+    }
+
+    /**
+     * One batched write so members never observe a half-applied order (design §8.7).
+     *
+     * Complexity:
+     * - **Time:** O(K · L) to spread K keys of length L, then one commit.
+     * - **Space:** O(K · L) for the keys.
+     */
+    override fun reorderDay(tripId: String, day: Int, orderedStopIds: List<String>, updatedBy: String) {
+        if (orderedStopIds.isEmpty()) return
+        val keys = FractionalIndex.spread(orderedStopIds.size)
+        val stops = db.collection("trips").document(tripId).collection("stops")
+        write("apply suggested order") {
+            val batch = db.batch()
+            orderedStopIds.forEachIndexed { i, id ->
+                batch.update(stops.document(id), "day" to day, "order" to keys[i], "updatedBy" to updatedBy, "updatedAt" to Timestamp.ServerTimestamp)
+            }
+            batch.commit()
         }
     }
 

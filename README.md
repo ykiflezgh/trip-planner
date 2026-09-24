@@ -1,7 +1,7 @@
 # Trip Planner
 
 Group trip planning on Kotlin Multiplatform + Compose Multiplatform (Android, iOS)
-with a Firebase backend and Google Maps Platform, Calendar, and Gemini integrations.
+with a Firebase backend and Google Maps Platform and Claude (Anthropic API) integrations.
 Built from `trip-planner-system-design.md` **v1.0** — section references (§) in code
 comments point there.
 
@@ -84,7 +84,7 @@ dialog) go through `InviteIntake` -> `JoinRoute` -> `redeemInvite` (idempotent f
 members; expired / used-up / invalid codes come back as clear messages). Hosting serves the
 landing page (`/join/{code}` with an `intent://` fallback on Android) and `assetlinks.json`
 carries the debug signing SHA-256 - Android reports the domain as verified. Cloud Functions are
-deployed to the dev project (Blaze); `ROUTES_API_KEY` / `GEMINI_API_KEY` hold placeholder values
+deployed to the dev project (Blaze); `ROUTES_API_KEY` / `ANTHROPIC_API_KEY` hold placeholder values
 until those features land.
 **Activity feed + FCM fan-out (design §10):** every stop write is classified by `onStopWritten`
 (added / moved / edited / removed; the actor comes from the write's auth context, falling back to
@@ -155,8 +155,22 @@ ETag (304 on `If-None-Match` at the Function URL; Hosting does not forward the h
 the rewrite every refresh is a 200), 429 for fetches under 30 s apart and 404 once revoked
 ("Remove my calendar links") or when the owner left the trip. `AppConfig.calendarFeedEnabled`
 hides the menu items. Tests: `firebase/functions/src/feed.test.ts` parses the output with `ical.js`.
-Not yet built from v1.1 Phase 3: Gemini suggestions.
-Still unverified: the Places call shapes in `shared/data/`. Cloud Functions in `firebase/functions/` still carry a TODO for Gemini.
+**Suggest an order** (branch `suggest-order`, design §8.7): "Suggest an order for Day N" in the trip
+menu (editors, two or more stops) calls `suggestDayOrder`, which loads the day's stops, pinned times,
+day hours and travel legs, asks Claude (`claude-sonnet-5` via the Messages API with a forced
+`propose_order` tool call, so the answer is schema-checked JSON; `firebase/functions/src/suggest.ts`)
+and validates the answer: a permutation of
+the day's ids, pinned entries kept, and no more late-arrival minutes than the current order per the
+schedule engine's Node build; one retry with feedback, then the best candidate is returned with its
+warnings. The client previews it in place (the day's stops are shown in the suggested order, a
+banner carries the rationale and warnings, reordering is frozen) and Apply writes fresh evenly
+spread `order` keys in one batched write. Flags: `SUGGEST_ORDER_ENABLED` param (in each project's
+`functions/.env.*`) and `AppConfig.suggestOrderEnabled`. Gemini was tried first and dropped (model
+retired for new users, then prepaid-credit billing); the unused `GEMINI_API_KEY` secret can be
+deleted. Until `firebase functions:secrets:set ANTHROPIC_API_KEY` is run with a real key the
+Function answers "Suggestions are not configured on this server yet".
+Tests: `firebase/functions/src/suggest.test.ts` (prompt, validation, lateness, retry loop, REST call).
+Still unverified: the Places call shapes in `shared/data/`. Cloud Functions in `firebase/functions/` have no open TODOs.
 
 ## Layout
 
