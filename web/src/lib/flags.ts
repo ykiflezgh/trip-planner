@@ -9,6 +9,7 @@ export const flags: Flags = { webClientEnabled: true, calendarFeedEnabled: true,
 const DEFAULTS = { web_client_enabled: true, calendar_feed_enabled: true, suggest_order_enabled: true }
 
 export async function loadFlags(timeoutMs = 2500): Promise<Flags> {
+  if (import.meta.env.VITE_USE_EMULATORS === '1') return flags // e2e (web/e2e): Remote Config has no emulator; defaults (all on), no network
   try {
     if (!(await isSupported())) return flags
     const rc = getRemoteConfig(getApp())
