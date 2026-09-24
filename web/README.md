@@ -1,4 +1,4 @@
-# Trip Planner — web client (W0 spike)
+# Trip Planner — web client
 
 React + TypeScript + Vite UI over the Kotlin core compiled to JS (design v1.1.1 §6.5 / §18 #10,
 companion *Web Client (React) System Design* 0.2). Nothing here talks to Firestore directly:
@@ -12,4 +12,6 @@ npm install && npm run dev           # http://localhost:5173/app/
 npm run build                        # -> firebase/hosting/public/app (served at /app/**)
 ```
 
-Spike results (2026-09-24) are in the root README under "Web W0 spike".
+Layout: `src/app` (router, shell), `src/features/{trips,calendar,map}` (UI only), `src/lib/kotlin`
+(the typed boundary to the Kotlin core), `src/lib/time.ts` (display helpers), `src/hooks`.
+`npm test` runs Vitest. W0 and W1 results are in the root README under "Web W0 spike" / "Web W1".
