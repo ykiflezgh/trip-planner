@@ -75,7 +75,7 @@
             "value": "camera=(), microphone=(), geolocation=(self)"
           },
           {
-            "key": "Content-Security-Policy-Report-Only",
+            "key": "Content-Security-Policy",
             "value": "default-src 'self'; base-uri 'self'; object-src 'none'; frame-ancestors 'none'; form-action 'self'; script-src 'self' https://maps.googleapis.com https://apis.google.com; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' https://fonts.gstatic.com; img-src 'self' data: https://maps.googleapis.com https://maps.gstatic.com https://mts.googleapis.com https://www.google.com; connect-src 'self' https://firestore.googleapis.com https://identitytoolkit.googleapis.com https://securetoken.googleapis.com https://us-central1-tripplanner-dev-fe0a4.cloudfunctions.net https://firebaseinstallations.googleapis.com https://fcmregistrations.googleapis.com https://firebaseremoteconfig.googleapis.com https://maps.googleapis.com https://places.googleapis.com; frame-src 'self' https://tripplanner-dev-fe0a4.web.app; worker-src 'self'; upgrade-insecure-requests"
           }
         ]
@@ -104,7 +104,7 @@
             "value": "camera=(), microphone=(), geolocation=(self)"
           },
           {
-            "key": "Content-Security-Policy-Report-Only",
+            "key": "Content-Security-Policy",
             "value": "default-src 'self'; base-uri 'self'; object-src 'none'; frame-ancestors 'none'; form-action 'self'; script-src 'self' https://maps.googleapis.com https://apis.google.com; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' https://fonts.gstatic.com; img-src 'self' data: https://maps.googleapis.com https://maps.gstatic.com https://mts.googleapis.com https://www.google.com; connect-src 'self' https://firestore.googleapis.com https://identitytoolkit.googleapis.com https://securetoken.googleapis.com https://us-central1-tripplanner-dev-fe0a4.cloudfunctions.net https://firebaseinstallations.googleapis.com https://fcmregistrations.googleapis.com https://firebaseremoteconfig.googleapis.com https://maps.googleapis.com https://places.googleapis.com; frame-src 'self' https://tripplanner-dev-fe0a4.web.app; worker-src 'self'; upgrade-insecure-requests"
           }
         ]
